@@ -19,6 +19,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: sales_agent_redis
+    command: redis-server --appendonly yes --appendfsync everysec
     ports:
       - "6379:6379"
     volumes:

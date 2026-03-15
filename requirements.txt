@@ -1,0 +1,31 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# LLM
+anthropic==0.40.0
+
+# Cache / Sessão
+redis==5.1.1
+
+# Banco de dados
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.35
+alembic==1.13.3
+
+# HTTP client (Meta API / SprintHub)
+httpx==0.27.2
+
+# Utilitários
+python-dotenv==1.0.1
+tenacity==9.0.0
+structlog==24.4.0
+
+# Agendamento (envio de áudios por tempo)
+apscheduler==3.10.4
+
+# Testes
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2

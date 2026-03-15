@@ -1,0 +1,265 @@
+### Sales Agent — Exemplo de Requisições HTTP
+# Use esta arquivo com a extensão REST Client do VS Code
+# https://marketplace.visualstudio.com/items?itemName=humao.rest-client
+
+@baseUrl = http://localhost:8000
+@domain = https://seu-dominio.com
+
+### ──────────────────────────────────────────────────────────
+### 1. Health Check (Local)
+### ──────────────────────────────────────────────────────────
+
+GET {{baseUrl}}/health
+
+### ──────────────────────────────────────────────────────────
+### 2. Health Check (Produção)
+### ──────────────────────────────────────────────────────────
+
+GET {{domain}}/health
+
+### ──────────────────────────────────────────────────────────
+### 3. Verificar Webhook (GET — Meta faz isso automaticamente)
+### ──────────────────────────────────────────────────────────
+
+GET {{baseUrl}}/webhook/whatsapp?hub.verify_token=seu-token&hub.challenge=12345
+
+### ──────────────────────────────────────────────────────────
+### 4. Simular Mensagem de Lead (Novo Contato)
+### ──────────────────────────────────────────────────────────
+
+POST {{baseUrl}}/webhook/whatsapp
+Content-Type: application/json
+
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "554799999999",
+              "phone_number_id": "1234567890"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "João Silva"
+                },
+                "wa_id": "5511987654321"
+              }
+            ],
+            "messages": [
+              {
+                "from": "5511987654321",
+                "id": "wamid.HBEUGVFhAhERAhEVJRVS123456",
+                "timestamp": "1699000000",
+                "type": "text",
+                "text": {
+                  "body": "Oi, quero saber sobre o MBA"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+
+### ──────────────────────────────────────────────────────────
+### 5. Lead Perguntando Sobre Preço
+### ──────────────────────────────────────────────────────────
+
+POST {{baseUrl}}/webhook/whatsapp
+Content-Type: application/json
+
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {},
+            "contacts": [
+              {
+                "profile": {"name": "Maria"},
+                "wa_id": "5511987654321"
+              }
+            ],
+            "messages": [
+              {
+                "from": "5511987654321",
+                "id": "wamid.msg2",
+                "timestamp": "1699000060",
+                "type": "text",
+                "text": {
+                  "body": "Quanto custa o curso? Tem desconto?"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+
+### ──────────────────────────────────────────────────────────
+### 6. Lead Pedindo para Falar com Humano
+### ──────────────────────────────────────────────────────────
+
+POST {{baseUrl}}/webhook/whatsapp
+Content-Type: application/json
+
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {},
+            "contacts": [
+              {
+                "profile": {"name": "Pedro"},
+                "wa_id": "5511987654321"
+              }
+            ],
+            "messages": [
+              {
+                "from": "5511987654321",
+                "id": "wamid.msg3",
+                "timestamp": "1699000120",
+                "type": "text",
+                "text": {
+                  "body": "Quero falar com um atendente humano, não robô"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+
+### ──────────────────────────────────────────────────────────
+### 7. Lead Manifestando Interesse (HOT Lead)
+### ──────────────────────────────────────────────────────────
+
+POST {{baseUrl}}/webhook/whatsapp
+Content-Type: application/json
+
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {},
+            "contacts": [
+              {
+                "profile": {"name": "Ana"},
+                "wa_id": "5511987654321"
+              }
+            ],
+            "messages": [
+              {
+                "from": "5511987654321",
+                "id": "wamid.msg4",
+                "timestamp": "1699000180",
+                "type": "text",
+                "text": {
+                  "body": "Gostei muito do curso! Como faço para me matricular?"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+
+### ──────────────────────────────────────────────────────────
+### 8. Lead Confirmando Matrícula
+### ──────────────────────────────────────────────────────────
+
+POST {{baseUrl}}/webhook/whatsapp
+Content-Type: application/json
+
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "123456789",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {},
+            "contacts": [
+              {
+                "profile": {"name": "Carlos"},
+                "wa_id": "5511987654321"
+              }
+            ],
+            "messages": [
+              {
+                "from": "5511987654321",
+                "id": "wamid.msg5",
+                "timestamp": "1699000240",
+                "type": "text",
+                "text": {
+                  "body": "Pronto! Já paguei a matrícula, número do pedido é #12345"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+
+### ──────────────────────────────────────────────────────────
+### NOTAS
+### ──────────────────────────────────────────────────────────
+
+# Para usar este arquivo:
+# 1. Instale a extensão REST Client do VS Code
+# 2. Abra este arquivo
+# 3. Clique em "Send Request" acima de qualquer requisição
+# 4. Veja a resposta no painel ao lado
+
+# Variáveis que você pode modificar:
+# - @baseUrl: URL da sua API (local ou produção)
+# - wa_id: Número WhatsApp do lead
+# - text.body: Mensagem que o lead enviará
+# - timestamp: Unix timestamp da mensagem
+
+# Exemplos de fluxos:
+# Fluxo 1 (Novo Lead):
+#   4 → 5 → 6 → 7 → 8
+#
+# Fluxo 2 (Lead Escalado):
+#   4 → 5 → 6
+#
+# Fluxo 3 (Lead Convertido):
+#   4 → 5 → 7 → 8

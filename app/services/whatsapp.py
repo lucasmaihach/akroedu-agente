@@ -53,7 +53,7 @@ async def send_audio_by_url(to: str, audio_url: str) -> dict:
     payload = {
         **_base_payload(to),
         "type": "audio",
-        "audio": {"link": audio_url, "ptt": True},
+        "audio": {"link": audio_url},
     }
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(BASE_URL, json=payload, headers=HEADERS)

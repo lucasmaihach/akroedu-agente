@@ -158,6 +158,21 @@ async def run_script_step(phone: str) -> bool:
         # Envia o áudio
         audio = step.get("audio")
         if audio:
+            # Aguarda ANTES do áudio simulando tempo de gravação.
+            # O lead vê "digitando..." enquanto Taynara "grava" — muito mais natural
+            # do que receber o áudio e depois ficar 60s sem resposta.
+            audio_duration = step.get("audio_duration_seconds", 0)
+            if audio_duration > 0:
+                logger.info(
+                    "⏳ Simulando gravação antes de enviar áudio.",
+                    phone=phone,
+                    step=step_index,
+                    duration=audio_duration,
+                )
+                await whatsapp.send_typing_and_wait(msg_id, audio_duration)
+            else:
+                await asyncio.sleep(1.5)
+
             if audio.startswith("http"):
                 # URL externa — envia diretamente por link
                 await whatsapp.send_audio_by_url(to=phone, audio_url=audio)
@@ -176,18 +191,7 @@ async def run_script_step(phone: str) -> bool:
                 # Já é um media_id hospedado na Meta
                 await whatsapp.send_audio_by_media_id(to=phone, media_id=audio)
 
-            # Aguarda a duração do áudio antes de continuar (realismo)
-            audio_duration = step.get("audio_duration_seconds", 0)
-            if audio_duration > 0:
-                logger.info(
-                    "⏳ Aguardando duração do áudio.",
-                    phone=phone,
-                    step=step_index,
-                    duration=audio_duration,
-                )
-                await asyncio.sleep(audio_duration)
-            else:
-                await asyncio.sleep(1.5)
+            await asyncio.sleep(1.5)
 
         # Envia texto intermediário após áudio (antes das imagens pós-áudio)
         mid_text = step.get("mid_text")

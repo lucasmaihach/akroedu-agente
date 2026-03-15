@@ -190,9 +190,13 @@ class BaseAgent:
         # 6. Salva a resposta no histórico
         await append_message(lead.phone_number, role="assistant", content=reply_text)
 
-        # 7. Simula digitação e envia
+        # 7. Simula digitação e envia — divide em bolhas separadas por linha
         await self._simulate_typing(reply_text)
-        await whatsapp.send_text(to=lead.phone_number, text=reply_text)
+        bubbles = [line for line in reply_text.split("\n") if line.strip()]
+        for i, bubble in enumerate(bubbles):
+            await whatsapp.send_text(to=lead.phone_number, text=bubble)
+            if i < len(bubbles) - 1:
+                await asyncio.sleep(1.2)
 
         # 8. Sincroniza com CRM
         await crm.sync_lead(lead)

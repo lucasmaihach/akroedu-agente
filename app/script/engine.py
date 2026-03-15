@@ -78,6 +78,23 @@ async def run_script_step(phone: str) -> bool:
         if lead is None or lead.is_escalated:
             return False
 
+        # Envia acolhimento personalizado antes do bloco (se existir variações).
+        # A variação é escolhida deterministicamente pelo telefone — mesmo lead,
+        # mesmo tom em toda a conversa. Substitui "[nome]" pelo primeiro nome.
+        acolhimento_list = step.get("acolhimento_variations")
+        if acolhimento_list:
+            nome = ""
+            if lead and lead.name:
+                nome = lead.name.strip().split()[0]
+            variation_idx = abs(hash(phone)) % len(acolhimento_list)
+            acolhimento = acolhimento_list[variation_idx]
+            if nome:
+                acolhimento = acolhimento.replace("[nome]", nome)
+            else:
+                acolhimento = acolhimento.replace(", [nome]", "").replace("[nome]", "").strip()
+            await whatsapp.send_text(to=phone, text=acolhimento)
+            await asyncio.sleep(1.5)
+
         # Envia mensagem de texto pré-passo (opcional)
         pre_text = step.get("pre_text")
         if pre_text:

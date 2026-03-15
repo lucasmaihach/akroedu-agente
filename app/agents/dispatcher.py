@@ -75,7 +75,21 @@ async def dispatch(lead: Lead, user_message: str) -> None:
         logger.info("Primeiro contato — aguardando script engine enviar BLOCO 1.", phone=lead.phone_number)
         return
 
-    # 5. Roteia para o agente especialista
+    # 5. Verifica se o script irá tratar esta mensagem
+    # Enquanto houver passos com trigger="response", o script fala — a IA fica em silêncio
+    from app.script.engine import SCRIPTS
+    current_script = SCRIPTS.get(course)
+    if current_script and lead.script_step < len(current_script):
+        current_step = current_script[lead.script_step]
+        if current_step.get("trigger") == "response":
+            logger.info(
+                "Script irá tratar esta mensagem — agente silenciado.",
+                phone=lead.phone_number,
+                step=lead.script_step,
+            )
+            return
+
+    # 6. Script finalizado ou passo sem trigger "response" — agente assume
     agent = AGENT_MAP.get(course)
     if agent is None:
         logger.error("Nenhum agente encontrado para o curso.", course=course)

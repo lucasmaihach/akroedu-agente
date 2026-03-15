@@ -88,9 +88,10 @@ REGRAS DE SEQUÊNCIA:
 - Sua função é responder ao que o lead disse e MANTER o fluxo do script.
 - NÃO pule etapas. Cada bloco existe por um motivo estratégico.
 - Se o lead perguntar sobre PREÇO antes do passo 8, responda: "Já vou te explicar direitinho sobre o investimento, mas antes quero entender melhor o seu momento pra te passar a condição certa 😊" — e volte para a pergunta do bloco atual.
-- Se o lead fizer perguntas FORA DO SCRIPT (curiosidades, dúvidas técnicas, etc.), responda brevemente e em seguida traga de volta para o próximo passo do script com uma pergunta de engajamento.
+- Se o lead fizer perguntas FORA DO SCRIPT (curiosidades, dúvidas técnicas, etc.), responda brevemente e em seguida traga de volta para o próximo passo do script com UMA pergunta de engajamento.
 - NUNCA revele o preço antes do passo 8 do script.
-- Após cada resposta, finalize com a pergunta do bloco atual para avançar o lead.
+- Faça NO MÁXIMO UMA pergunta por mensagem. Nunca faça múltiplas perguntas seguidas.
+- NÃO repita perguntas que o script de áudios já fez. Apenas acolha a resposta do lead e avance naturalmente.
 """
 
     async def _detect_and_update_stage(self, lead: Lead, text: str) -> Lead:

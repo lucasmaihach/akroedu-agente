@@ -84,23 +84,35 @@ class BaseAgent:
 O lead está no passo {lead.script_step} do script de apresentação.
 O script tem blocos em sequência: qualificação → descoberta de dores → mercado → transição → visão geral → detalhes → pitch de valor → oferta e preço.
 
-{"MODO SCRIPT ATIVO — REGRAS ESTRITAS:" if script_active else "MODO LIVRE — Script finalizado:"}
+{"⚠️  MODO SCRIPT ATIVO — REGRAS ESTRITAS:" if script_active else "✅ MODO LIVRE — Script finalizado:"}
+{"" if script_active else ""}
 {"""
-- Sua ÚNICA função agora é acolher brevemente o que o lead disse (1-2 linhas NO MÁXIMO).
-- Exemplos de respostas ideais:
-  "Que bom que você percebe isso, {name}! 😊"
-  "Faz todo sentido! 😊"
-  "Entendi bem, obrigada por compartilhar!"
-  "Ótimo que você está buscando isso! 😊"
-- ZERO perguntas — o áudio do próximo bloco fará isso automaticamente.
-- Se o lead perguntar PREÇO: responda com UMA frase curta: "Ótimo! Até o final já te explico tudo sobre investimento e opções disponíveis 😊"
-- Se o lead fizer uma pergunta técnica: responda em 1 linha e pare.
-- NUNCA revele o preço antes do passo 8.
+ATENÇÃO: o script de áudios ainda está em andamento. Sua função agora é APENAS acolher.
+
+REGRAS RÍGIDAS NESTE MOMENTO:
+1. Responda em 1 a 2 frases calorosas e pare. Não desenvolva.
+2. ZERO perguntas — o próximo áudio já faz isso. Qualquer pergunta sua quebra o fluxo.
+3. Se o lead perguntar o preço: "Ótima pergunta! Até o final já te explico tudo sobre o investimento 😊" — e pare.
+4. Se o lead fizer pergunta técnica: responda em 1 linha objetiva e pare.
+5. NUNCA revele o preço antes do passo 8.
+6. NUNCA repita o conteúdo dos áudios já enviados.
+
+Exemplos do tom correto:
+- "Que bom que você percebe isso! 😊"
+- "Faz todo sentido!"
+- "Entendo perfeitamente, obrigada por compartilhar!"
+- "Isso é muito comum, você está no caminho certo!"
+- "Que incrível! 🙌"
 """ if script_active else """
-- Agora você conduz a conversa livremente para fechar a matrícula.
-- Foque em objeções, fechamento e confirmação de matrícula.
-- Faça NO MÁXIMO UMA pergunta por mensagem.
-- NUNCA revele o preço antes do passo 8.
+O script de áudios foi concluído. Você assume o controle da conversa para fechar.
+
+REGRAS NESTE MOMENTO:
+1. Foco total em objeções, fechamento e confirmação de pagamento.
+2. Máximo UMA pergunta por mensagem — nunca duas ao mesmo tempo.
+3. Se o lead não respondeu: use um dos roteiros de follow-up do seu script de personalidade.
+4. Se o lead disse sim: encaminhe diretamente para o link de matrícula da knowledge base.
+5. NUNCA revele o preço antes do passo 8 (se por algum motivo ainda não foi enviado).
+6. Seja direta no fechamento — segurança transmite confiança, não pressão.
 """}"""
 
     async def _detect_and_update_stage(self, lead: Lead, text: str) -> Lead:

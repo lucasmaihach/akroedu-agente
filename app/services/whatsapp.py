@@ -203,6 +203,43 @@ async def mark_as_read(message_id: str) -> None:
         resp.raise_for_status()
 
 
+async def download_media(media_id: str) -> tuple[bytes, str]:
+    """
+    Baixa um arquivo de mídia da Meta pelo media_id.
+    Retorna (bytes_do_arquivo, mime_type).
+
+    Usado para baixar áudios enviados pelo lead e transcrever.
+    """
+    # Passo 1: obtém a URL de download pelo media_id
+    headers_auth = {"Authorization": f"Bearer {settings.meta_access_token}"}
+    media_info_url = f"{settings.meta_api_url}/{media_id}"
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        info_resp = await client.get(media_info_url, headers=headers_auth)
+        info_resp.raise_for_status()
+        info = info_resp.json()
+
+    download_url = info.get("url")
+    mime_type = info.get("mime_type", "audio/ogg")
+
+    if not download_url:
+        raise ValueError(f"URL de download não encontrada para media_id={media_id}")
+
+    # Passo 2: baixa o arquivo de mídia
+    async with httpx.AsyncClient(timeout=60) as client:
+        dl_resp = await client.get(download_url, headers=headers_auth)
+        dl_resp.raise_for_status()
+        audio_bytes = dl_resp.content
+
+    logger.info(
+        "⬇️ Mídia baixada da Meta.",
+        media_id=media_id,
+        mime_type=mime_type,
+        size_kb=len(audio_bytes) // 1024,
+    )
+    return audio_bytes, mime_type
+
+
 async def send_typing_indicator(to: str) -> None:
     """
     Simula digitação — envia status 'typing'.

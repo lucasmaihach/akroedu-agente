@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     anthropic_model: str = "claude-sonnet-4-5"
 
+    # ── Groq (transcrição de áudio via Whisper) ─────────────
+    groq_api_key: str = ""  # opcional — deixe vazio para desativar transcrição
+
     # ── Redis ───────────────────────────────────────────────
     redis_url: str = "redis://localhost:6379/0"
     session_ttl_hours: int = 48

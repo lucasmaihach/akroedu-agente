@@ -7,6 +7,8 @@ from app.models.message import MetaWebhookPayload, IncomingMessage
 from app.memory.session import get_or_create_lead, is_message_already_processed
 from app.agents.dispatcher import dispatch
 from app.script.engine import run_script_step
+from app.services import whatsapp
+from app.services.transcription import transcribe_audio
 
 logger = structlog.get_logger()
 
@@ -88,13 +90,41 @@ async def _handle_incoming_message(msg, value) -> None:
             name=contact_name,
         )
 
-        # Extrai o texto da mensagem (só processamos texto por enquanto)
+        # Extrai o texto da mensagem
         text = None
+
         if message_type == "text" and msg.text:
             text = msg.text.body.strip()
+
+        elif message_type == "audio" and msg.audio:
+            # Baixa o áudio da Meta e transcreve via Groq Whisper
+            try:
+                audio_bytes, mime_type = await whatsapp.download_media(msg.audio.id)
+                transcription = await transcribe_audio(audio_bytes, mime_type)
+                if transcription:
+                    text = f"[áudio]: {transcription}"
+                    logger.info(
+                        "🎙️ Áudio do lead transcrito.",
+                        phone=phone_number,
+                        transcription_preview=transcription[:80],
+                    )
+                else:
+                    logger.warning(
+                        "⚠️ Transcrição falhou — áudio ignorado.",
+                        phone=phone_number,
+                    )
+                    return
+            except Exception as e:
+                logger.error(
+                    "❌ Erro ao processar áudio do lead.",
+                    phone=phone_number,
+                    error=str(e),
+                )
+                return
+
         else:
-            # Se não for texto, ignora
-            logger.info("Mensagem ignorada (tipo não é texto).", type=message_type)
+            # Outros tipos (imagem, vídeo, sticker, etc.) — ignora por enquanto
+            logger.info("Mensagem ignorada (tipo não suportado).", type=message_type)
             return
 
         # Obtém ou cria o lead

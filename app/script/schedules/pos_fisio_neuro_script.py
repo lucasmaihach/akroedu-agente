@@ -29,13 +29,11 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     # Dispara imediatamente quando o lead entra no funil
     {
         "delay_seconds": 3,
-        "pre_text": (
-            "Olá, meu nome é Taynara 😊 Estou te mandando mensagem porque vi que você "
-            "se interessou pela nossa pós-graduação em Fisioterapia Neurofuncional.\n\n"
-            "Quero conhecer um pouquinho mais sobre você. Me conta: você já é formado? "
-            "Há quanto tempo? Já atende em consultório ou tem clínica própria?\n\n"
-            "Fique à vontade para escrever ou mandar áudio 🎤"
-        ),
+        "pre_text": [
+            "Olá, meu nome é Taynara 😊 Estou te mandando mensagem porque vi que você se interessou pela nossa pós-graduação em Fisioterapia Neurofuncional.",
+            "Quero conhecer um pouquinho mais sobre você. Me conta: você já é formado? Há quanto tempo? Já atende em consultório ou tem clínica própria?",
+            "Fique à vontade para escrever ou mandar áudio 🎤",
+        ],
         "audio": None,  # TODO: gravar 01_boas_vindas.opus quando quiser personalizar com voz
         "post_text": None,
         "trigger": "auto",
@@ -45,11 +43,10 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     # Dispara após o lead responder a qualificação
     {
         "delay_seconds": 0,
-        "pre_text": (
-            "Muito obrigado por compartilhar! 🙏\n\n"
-            "Agora me fala: quais são os principais desafios no seu dia a dia "
-            "que você acredita que essa pós poderia te ajudar a resolver?"
-        ),
+        "pre_text": [
+            "Muito obrigado por compartilhar! 🙏",
+            "Agora me fala: quais são os principais desafios no seu dia a dia que você acredita que essa pós poderia te ajudar a resolver?",
+        ],
         "audio": None,
         "post_text": None,
         "trigger": "response",
@@ -60,16 +57,16 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     {
         "delay_seconds": 0,
         "acolhimento_variations": [
-            "Obrigada por compartilhar isso, [nome] 🙏 Você não está sozinho(a) nisso, a maioria dos fisioterapeutas que atende neuro sente exatamente o que você descreveu. Me deixa te mostrar como essa realidade pode mudar:",
-            "Faz todo sentido, [nome]. Insegurança técnica sem formação específica em neuro é esperada e totalmente resolvível. Olha o que acontece quando isso não é resolvido logo:",
-            "Que bom que você trouxe isso, [nome]! É exatamente sobre esses pontos que eu quero conversar. Presta atenção nesse áudio:",
-            "[nome], o que você descreveu é sério. Cada mês sem resolver isso é um mês a mais perdendo paciente e confiança técnica. Quero que você entenda o tamanho disso:",
-            "Muito obrigada por ser tão honesta, [nome] 🙏 Reconhecer o que precisa melhorar já é o primeiro passo pra mudar de patamar. Tenho algo importante pra te mostrar:",
-            "Entendo, [nome]. Você descreveu o perfil de quem mais se transforma com essa formação. Antes de te mostrar a solução, quero que você veja o custo de continuar assim:",
-            "[nome], você acabou de descrever o que trava a carreira de 90% dos fisioterapeutas sem pós em neuro. Quanto mais tempo passa, mais difícil fica. Me deixa te mostrar por quê:",
-            "Uau, [nome]! Você resumiu muito bem. É exatamente sobre isso que eu quero conversar hoje. Ouve esse áudio que vai fazer sentido:",
-            "[nome], você acabou de descrever o que praticamente todo fisioterapeuta que me procura sente. Você não está atrasado(a), está no momento certo de mudar isso. Quero que você veja o cenário completo:",
-            "Entende uma coisa, [nome]. O que você descreveu não é falta de capacidade, é falta de formação específica. São coisas muito diferentes. E isso tem solução. Vou te mostrar o que muda quando você resolve:",
+            ["Obrigada por compartilhar isso, [nome] 🙏", "Você não está sozinho(a) nisso. A maioria dos fisioterapeutas que atende neuro sente exatamente o que você descreveu.", "Me deixa te mostrar como essa realidade pode mudar:"],
+            ["Faz todo sentido, [nome].", "Insegurança técnica sem formação específica em neuro é esperada e totalmente resolvível.", "Olha o que acontece quando isso não é resolvido logo:"],
+            ["Que bom que você trouxe isso, [nome]!", "É exatamente sobre esses pontos que eu quero conversar.", "Presta atenção nesse áudio:"],
+            ["[nome], o que você descreveu é sério.", "Cada mês sem resolver isso é um mês a mais perdendo paciente e confiança técnica.", "Quero que você entenda o tamanho disso:"],
+            ["Muito obrigada por ser tão honesta, [nome] 🙏", "Reconhecer o que precisa melhorar já é o primeiro passo pra mudar de patamar.", "Tenho algo importante pra te mostrar:"],
+            ["Entendo, [nome].", "Você descreveu o perfil de quem mais se transforma com essa formação.", "Antes de te mostrar a solução, quero que você veja o custo de continuar assim:"],
+            ["[nome], você acabou de descrever o que trava a carreira de 90% dos fisioterapeutas sem pós em neuro.", "Quanto mais tempo passa, mais difícil fica.", "Me deixa te mostrar por quê:"],
+            ["Uau, [nome]! Você resumiu muito bem.", "É exatamente sobre isso que eu quero conversar hoje.", "Ouve esse áudio que vai fazer sentido:"],
+            ["[nome], você acabou de descrever o que praticamente todo fisioterapeuta que me procura sente.", "Você não está atrasado(a), está no momento certo de mudar isso.", "Quero que você veja o cenário completo:"],
+            ["Entende uma coisa, [nome].", "O que você descreveu não é falta de capacidade, é falta de formação específica.", "E isso tem solução. Vou te mostrar o que muda quando você resolve:"],
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/02_amplificacao_dor.opus",
@@ -97,16 +94,16 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     {
         "delay_seconds": 0,
         "acolhimento_variations": [
-            "Fico feliz que percebe isso, [nome]! Quem enxerga essa oportunidade cedo já sai na frente. Me deixa te mostrar como transformar isso em realidade:",
-            "Exatamente, [nome]! Quem se especializar primeiro vai ocupar esse espaço, o mercado não espera. Vou te mostrar o próximo passo pra você ser essa profissional:",
-            "Que bom, [nome]! Profissionais que chegam com essa visão são exatamente os que mais crescem depois da pós. Por isso quero que você ouça isso:",
-            "Isso mesmo, [nome]. Os dados são claros e você acabou de conectar os pontos que a maioria demora anos pra entender. Vou te mostrar como agir:",
-            "[nome], o que você percebeu agora é só a ponta do iceberg. Tem muito mais oportunidade nesse mercado. Pra aproveitar, você precisa tomar uma decisão. Me deixa te explicar:",
-            "Consegue sim, [nome]! E sabe mais? Muitas alunas nossas pensavam exatamente assim antes de entrar na pós e hoje estão colhendo esses resultados. Quer saber como chegar lá?",
-            "Perfeito, [nome]! Você já tem a visão certa. Agora é sobre ter a formação que vai sustentar isso na prática. Vou te mostrar como funciona:",
-            "Fico feliz que você enxerga isso, [nome]. Imagina continuar mais um ano sem agir, enquanto outros profissionais se especializam. Por isso o momento de decidir é agora:",
-            "Ótimo, [nome]! Você já tem a mentalidade certa. Me deixa te mostrar o que diferencia quem só enxerga a oportunidade de quem realmente aproveita ela:",
-            "[nome], você acabou de confirmar o que os dados mostram. Profissionais com essa visão e a formação certa dominam o mercado de neuro. Me deixa te mostrar o que precisa fazer pra chegar lá:",
+            ["Fico feliz que percebe isso, [nome]!", "Quem enxerga essa oportunidade cedo já sai na frente. Me deixa te mostrar como transformar isso em realidade:"],
+            ["Exatamente, [nome]!", "Quem se especializar primeiro vai ocupar esse espaço, o mercado não espera. Vou te mostrar o próximo passo pra você ser essa profissional:"],
+            ["Que bom, [nome]!", "Profissionais que chegam com essa visão são exatamente os que mais crescem depois da pós. Por isso quero que você ouça isso:"],
+            ["Isso mesmo, [nome].", "Os dados são claros e você acabou de conectar os pontos que a maioria demora anos pra entender. Vou te mostrar como agir:"],
+            ["[nome], o que você percebeu agora é só a ponta do iceberg.", "Tem muito mais oportunidade nesse mercado. Pra aproveitar, você precisa tomar uma decisão. Me deixa te explicar:"],
+            ["Consegue sim, [nome]! E sabe mais?", "Muitas alunas nossas pensavam exatamente assim antes de entrar na pós e hoje estão colhendo esses resultados. Quer saber como chegar lá?"],
+            ["Perfeito, [nome]!", "Você já tem a visão certa. Agora é sobre ter a formação que vai sustentar isso na prática. Vou te mostrar como funciona:"],
+            ["Fico feliz que você enxerga isso, [nome].", "Imagina continuar mais um ano sem agir, enquanto outros profissionais se especializam. Por isso o momento de decidir é agora:"],
+            ["Ótimo, [nome]!", "Você já tem a mentalidade certa. Me deixa te mostrar o que diferencia quem só enxerga a oportunidade de quem realmente aproveita ela:"],
+            ["[nome], você acabou de confirmar o que os dados mostram.", "Profissionais com essa visão e a formação certa dominam o mercado de neuro. Me deixa te mostrar o que precisa fazer pra chegar lá:"],
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/04_transicao.opus",
@@ -139,16 +136,16 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     {
         "delay_seconds": 0,
         "acolhimento_variations": [
-            "Que bom, [nome]! Fico feliz que vê isso. Me deixa te mostrar como funciona na prática, que é onde a diferença aparece de verdade 😊",
-            "Perfeito, [nome]! Agora você vai ver como isso funciona na prática, que é onde a coisa fica realmente interessante 😊",
-            "Fico muito feliz, [nome]! Você descreveu exatamente o que nossas alunas mais valorizam na pós. Me deixa detalhar como tudo isso se aplica no dia a dia 😊",
-            "Exato, [nome]! É uma abordagem que não existe em nenhuma outra pós do mercado. Vou te mostrar como isso funciona na prática clínica 😊",
-            "[nome], o que você acabou de ouvir é só a estrutura. O que realmente impressiona é ver cada módulo se aplicando no atendimento real. Ouve esse próximo áudio 😊",
-            "Boa, [nome]! E o melhor ainda tá por vir. Agora vou te mostrar como tudo isso vira prática clínica real 😄",
-            "Ótimo, [nome]! Então sem enrolar, me deixa te mostrar como cada módulo se aplica em casos reais que você já pode estar enfrentando 😊",
-            "[nome], você vai amar o próximo áudio! Aqui é onde as alunas geralmente falam 'é exatamente isso que eu precisava' 😄",
-            "Que bom, [nome]! Quando o conteúdo se encaixa com o que você busca, o aprendizado é muito mais rápido. Vou te mostrar como cada módulo funciona 😊",
-            "Perfeito, [nome]! Imagina ver isso aplicado em um paciente pós-AVE na prática. É onde a diferença fica evidente. Ouve 😊",
+            ["Que bom, [nome]! Fico feliz que vê isso 😊", "Me deixa te mostrar como funciona na prática, que é onde a diferença aparece de verdade:"],
+            ["Perfeito, [nome]!", "Agora você vai ver como isso funciona na prática, que é onde a coisa fica realmente interessante 😊"],
+            ["Fico muito feliz, [nome]!", "Você descreveu exatamente o que nossas alunas mais valorizam na pós. Me deixa detalhar como tudo isso se aplica no dia a dia 😊"],
+            ["Exato, [nome]!", "É uma abordagem que não existe em nenhuma outra pós do mercado. Vou te mostrar como isso funciona na prática clínica 😊"],
+            ["[nome], o que você acabou de ouvir é só a estrutura.", "O que realmente impressiona é ver cada módulo se aplicando no atendimento real.", "Ouve esse próximo áudio 😊"],
+            ["Boa, [nome]!", "E o melhor ainda tá por vir. Agora vou te mostrar como tudo isso vira prática clínica real 😄"],
+            ["Ótimo, [nome]!", "Então sem enrolar, me deixa te mostrar como cada módulo se aplica em casos reais que você já pode estar enfrentando 😊"],
+            ["[nome], você vai amar o próximo áudio!", "Aqui é onde as alunas geralmente falam 'é exatamente isso que eu precisava' 😄"],
+            ["Que bom, [nome]!", "Quando o conteúdo se encaixa com o que você busca, o aprendizado é muito mais rápido. Vou te mostrar como cada módulo funciona 😊"],
+            ["Perfeito, [nome]!", "Imagina ver isso aplicado em um paciente pós-AVE na prática. É onde a diferença fica evidente. Ouve 😊"],
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/06_detalhes_parte1.opus",
@@ -230,16 +227,16 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     {
         "delay_seconds": 0,
         "acolhimento_variations": [
-            "Haha, já tô vendo seu nome aí também, [nome]! 😄 Esse diploma vai representar muito na sua carreira. Vou te falar sobre o investimento pra chegar até ele:",
-            "Que bom, [nome]! Esse momento em que o profissional se vê no diploma é quando a decisão começa a ficar mais clara. Me deixa te mostrar o valor real dessa formação:",
-            "Ótimo, [nome]! Então vamos falar sobre o que precisa acontecer pra esse diploma sair do imaginário e ir pra sua parede:",
-            "[nome], esse diploma é reconhecido pelo MEC e vai abrir portas que hoje estão fechadas. Faz sentido se ver nele 😊 Vou te explicar o que você investe pra conquistar isso:",
-            "[nome], pensa comigo: daqui 12 meses esse diploma vai representar não só um título, mas uma carreira completamente diferente. Vale a reflexão. Me deixa mostrar o que está por trás desse investimento:",
-            "Boa, [nome]! Esse diploma já tem seu nome escrito. Agora é só você confirmar 😊 Vou te explicar o investimento:",
-            "[nome], as alunas que mais cresceram com a pós disseram a mesma coisa quando viram o diploma 😄 É um ótimo sinal! Vamos falar sobre o investimento:",
-            "Ótimo, [nome]! Esse diploma é emitido pela Anhanguera, uma das maiores instituições do país. Ter ele no currículo é diferencial real. Me deixa falar sobre o investimento:",
-            "Fico feliz que consegue se ver nele, [nome]! E quanto mais cedo você começar, mais cedo esse diploma vai estar na sua mão e na sua carreira. Vou te apresentar o investimento:",
-            "[nome], já tô vendo seu nome nele também! 😍 Me deixa te mostrar o que é preciso pra tornar isso real:",
+            ["Haha, já tô vendo seu nome aí também, [nome]! 😄", "Esse diploma vai representar muito na sua carreira. Vou te falar sobre o investimento pra chegar até ele:"],
+            ["Que bom, [nome]!", "Esse momento em que o profissional se vê no diploma é quando a decisão começa a ficar mais clara. Me deixa te mostrar o valor real dessa formação:"],
+            ["Ótimo, [nome]!", "Então vamos falar sobre o que precisa acontecer pra esse diploma sair do imaginário e ir pra sua parede:"],
+            ["[nome], esse diploma é reconhecido pelo MEC e vai abrir portas que hoje estão fechadas.", "Faz sentido se ver nele 😊 Vou te explicar o que você investe pra conquistar isso:"],
+            ["[nome], pensa comigo: daqui 12 meses esse diploma vai representar não só um título, mas uma carreira completamente diferente.", "Vale a reflexão. Me deixa mostrar o que está por trás desse investimento:"],
+            ["Boa, [nome]! Esse diploma já tem seu nome escrito.", "Agora é só você confirmar 😊 Vou te explicar o investimento:"],
+            ["[nome], as alunas que mais cresceram com a pós disseram a mesma coisa quando viram o diploma 😄", "É um ótimo sinal! Vamos falar sobre o investimento:"],
+            ["Ótimo, [nome]! Esse diploma é emitido pela Anhanguera, uma das maiores instituições do país.", "Ter ele no currículo é diferencial real. Me deixa falar sobre o investimento:"],
+            ["Fico feliz que consegue se ver nele, [nome]!", "E quanto mais cedo você começar, mais cedo esse diploma vai estar na sua mão e na sua carreira. Vou te apresentar o investimento:"],
+            ["[nome], já tô vendo seu nome nele também! 😍", "Me deixa te mostrar o que é preciso pra tornar isso real:"],
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/08_pitch_valor.opus",
@@ -251,11 +248,10 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     {
         "delay_seconds": 0,
         "audio": "pos_fisio_neuro/09_preco_urgencia.opus",
-        "post_text": (
-            "Para garantir sua vaga é só acessar o link abaixo 👇\n"
-            "https://link-de-teste.com/pos-fisio-neuro\n\n"
-            "Como prefere fazer: PIX ou cartão? 😊"
-        ),
+        "post_text": [
+            "Para garantir sua vaga é só acessar o link abaixo 👇\nhttps://link-de-teste.com/pos-fisio-neuro",
+            "Como prefere fazer: PIX ou cartão? 😊",
+        ],
         "trigger": "response",
     },
 

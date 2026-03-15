@@ -20,6 +20,18 @@ from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT
 logger = structlog.get_logger()
 
 
+async def _send_text_bubbles(phone: str, text, delay_between: float = 1.2) -> None:
+    """
+    Envia texto ou lista de textos como bolhas separadas no WhatsApp.
+    Simula o comportamento humano de mandar várias mensagens curtas.
+    """
+    items = text if isinstance(text, list) else [text]
+    for i, item in enumerate(items):
+        await whatsapp.send_text(to=phone, text=item)
+        if i < len(items) - 1:
+            await asyncio.sleep(delay_between)
+
+
 async def _send_image(phone: str, image: str) -> None:
     """
     Envia uma imagem ao lead.
@@ -110,18 +122,23 @@ async def run_script_step(phone: str) -> bool:
             if lead and lead.name:
                 nome = lead.name.strip().split()[0]
             variation_idx = abs(hash(phone)) % len(acolhimento_list)
-            acolhimento = acolhimento_list[variation_idx]
-            if nome:
-                acolhimento = acolhimento.replace("[nome]", nome)
-            else:
-                acolhimento = acolhimento.replace(", [nome]", "").replace("[nome]", "").strip()
-            await whatsapp.send_text(to=phone, text=acolhimento)
+            variation = acolhimento_list[variation_idx]
+            # Variação pode ser str ou list[str] (múltiplas bolhas)
+            parts = variation if isinstance(variation, list) else [variation]
+            for i, part in enumerate(parts):
+                if nome:
+                    part = part.replace("[nome]", nome)
+                else:
+                    part = part.replace(", [nome]", "").replace("[nome]", "").strip()
+                await whatsapp.send_text(to=phone, text=part)
+                if i < len(parts) - 1:
+                    await asyncio.sleep(1.2)
             await asyncio.sleep(1.5)
 
-        # Envia mensagem de texto pré-passo (opcional)
+        # Envia mensagem de texto pré-passo (opcional) — suporta str ou list[str]
         pre_text = step.get("pre_text")
         if pre_text:
-            await whatsapp.send_text(to=phone, text=pre_text)
+            await _send_text_bubbles(phone, pre_text)
             await asyncio.sleep(1.5)
 
         # Envia imagens ANTES do áudio (notícias, prints, etc.)
@@ -156,7 +173,7 @@ async def run_script_step(phone: str) -> bool:
         mid_text = step.get("mid_text")
         if mid_text:
             await asyncio.sleep(2)
-            await whatsapp.send_text(to=phone, text=mid_text)
+            await _send_text_bubbles(phone, mid_text)
             await asyncio.sleep(1.5)
 
         # Envia imagens APÓS o áudio (diploma, certificados, etc.)
@@ -165,11 +182,11 @@ async def run_script_step(phone: str) -> bool:
             await _send_image(phone, img)
             await asyncio.sleep(1.5)
 
-        # Envia mensagem de texto pós-áudio (opcional)
+        # Envia mensagem de texto pós-áudio (opcional) — suporta str ou list[str]
         post_text = step.get("post_text")
         if post_text:
             await asyncio.sleep(2)
-            await whatsapp.send_text(to=phone, text=post_text)
+            await _send_text_bubbles(phone, post_text)
 
         # Avança o passo do script
         next_step_index = step_index + 1

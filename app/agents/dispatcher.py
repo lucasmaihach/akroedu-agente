@@ -87,7 +87,7 @@ async def dispatch(lead: Lead, user_message: str) -> None:
     # Isso deve ser True para TODOS os passos ANTES do passo de preço (passo 9),
     # independente de o trigger ser "auto" ou "response".
     from app.script.engine import SCRIPTS
-    PRICE_REVEAL_STEP = 9  # índice do bloco 08 — Oferta de Preço + Urgência
+    PRICE_REVEAL_STEP = 10  # índice após o bloco 08 — IA só assume depois que o áudio de preço foi enviado
     current_script = SCRIPTS.get(course)
     script_active = (
         current_script is not None

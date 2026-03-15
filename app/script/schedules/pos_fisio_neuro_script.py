@@ -250,22 +250,6 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     # ── BLOCO 8 — Oferta de Preço + Urgência ─────────────────────────────────
     {
         "delay_seconds": 0,
-        "acolhimento_variations": [
-            "Ótimo, [nome]! Quem entende o que está comprando toma a melhor decisão. Agora vou te apresentar o investimento com todos os detalhes:",
-            "Perfeito, [nome]. Então sem enrolar — deixa eu te mostrar o investimento e as condições que tenho disponíveis só até hoje:",
-            "Que bom, [nome]! Você acabou de enxergar o que separa quem investe no crescimento de quem fica esperando o momento certo. Agora vem a parte prática:",
-            "Fico feliz que consegue ver isso, [nome]. Profissionais que enxergam valor antes de ver o preço são os que mais se comprometem com o processo. Agora deixa eu te apresentar o investimento:",
-            "[nome], o que você acabou de confirmar é a parte mais importante de qualquer decisão de investimento: saber o que está recebendo antes de olhar o número. Agora vamos ao número:",
-            "Ótimo, [nome]. Você pensou exatamente como as profissionais que mais se desenvolvem com a pós pensam. Agora vem o investimento:",
-            "[nome], perfeito. E o valor que vou te apresentar agora é uma condição que temos disponível só por hoje — então presta atenção:",
-            "Consegue sim, [nome]! 😊 Ótimo. Agora vem a melhor parte — as condições que eu tenho pra você hoje:",
-            "[nome], boa! Você passou pelo filtro que a maioria das pessoas trava. Agora deixa eu te mostrar o investimento — acho que vai surpreender 😊",
-            "Que bom, [nome]. Quando a pessoa enxerga o valor real de uma formação, ela toma decisões com muito mais clareza e segurança. Agora vou te apresentar o investimento:",
-        ],
-        "pre_text": (
-            "O valor de referência dessa pós no mercado é 12x de R$ 797.\n\n"
-            "Mas para você que chegou até aqui, a condição especial é *20x de R$ 257* 🎯"
-        ),
         "audio": "pos_fisio_neuro/09_preco_urgencia.opus",
         "post_text": (
             "Para garantir sua vaga é só acessar o link abaixo 👇\n"

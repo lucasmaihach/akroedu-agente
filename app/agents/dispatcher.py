@@ -76,10 +76,19 @@ async def dispatch(lead: Lead, user_message: str) -> None:
         return
 
     # 5. Verifica se o script irá tratar esta mensagem
-    # Enquanto houver passos com trigger="response", o script fala — a IA fica em silêncio
+    # Exceção: objeções, perguntas de preço ou pedido de humano sempre ativam a IA
+    OVERRIDE_KEYWORDS = [
+        "caro", "preço", "valor", "quanto custa", "quanto é", "investimento",
+        "desconto", "parcel", "pagar", "não tenho", "nao tenho",
+        "não posso", "nao posso", "preciso pensar", "vou pensar",
+        "humano", "atendente", "pessoa real", "falar com alguém",
+    ]
+    message_lower = user_message.lower()
+    has_override = any(kw in message_lower for kw in OVERRIDE_KEYWORDS)
+
     from app.script.engine import SCRIPTS
     current_script = SCRIPTS.get(course)
-    if current_script and lead.script_step < len(current_script):
+    if current_script and lead.script_step < len(current_script) and not has_override:
         current_step = current_script[lead.script_step]
         if current_step.get("trigger") == "response":
             logger.info(
@@ -88,6 +97,13 @@ async def dispatch(lead: Lead, user_message: str) -> None:
                 step=lead.script_step,
             )
             return
+
+    if has_override:
+        logger.info(
+            "Palavra-chave de objeção detectada — IA assume mesmo durante script.",
+            phone=lead.phone_number,
+            step=lead.script_step,
+        )
 
     # 6. Script finalizado ou passo sem trigger "response" — agente assume
     agent = AGENT_MAP.get(course)

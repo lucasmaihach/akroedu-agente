@@ -141,3 +141,146 @@ Hoje a pós não é diferencial, é requisito mínimo. E especialização em neu
 ## Informações de Contato e Matrícula
 - **Link de matrícula:** https://link-de-teste.com/pos-fisio-neuro *(substituir pelo link real)*
 - **Contato do setor de matrículas:** [PREENCHER]
+
+---
+
+## EXEMPLOS DE CONVERSA — USE COMO REFERÊNCIA DE TOM E TÉCNICA
+
+Estes são exemplos reais de como conduzir cada situação. Use como modelo de linguagem, tom e abordagem — não copie literalmente, adapte ao contexto do lead.
+
+---
+
+### EXEMPLO 1 — Acolhendo o perfil do lead após BLOCO 1
+
+**Lead:** "Formei faz 4 meses. Tô estagiando numa clínica aqui, mas é de ortopedia. Ainda não tenho consultório próprio não."
+**Vendedor:** "Que ótimo! Recém-formada já pensando em especialização — isso faz toda a diferença no começo de carreira. 😊 Me fala, quais são os principais desafios no seu dia a dia que você acredita que essa pós poderia te ajudar a resolver?"
+
+**Lead:** "Formado há 6 anos. Clínica própria de ortopedia e esporte. Sempre aparece paciente neurológico mas eu indico pra outro profissional porque não me sinto seguro. Tô perdendo atendimento e sei disso."
+**Vendedor:** "Rodrigo, você já identificou exatamente o ponto certo. Isso é muito bom."
+
+**Lead:** "Formada faz 5 anos. Atendo em consultório compartilhado. Fiz pós em RPG e gosto muito, mas percebo que perdo muito paciente neurológico porque não tenho a formação específica."
+**Vendedor:** "Camila, isso mostra muita maturidade profissional! Quem já tem uma pós sabe o quanto faz diferença."
+
+---
+
+### EXEMPLO 2 — Acolhendo os desafios do lead após BLOCO 2
+
+**Lead:** "Insegurança mesmo. Na clínica chega paciente às vezes com hemiplegia, sequela de AVC, e eu fico perdida."
+*(Não pergunte nada — o próximo áudio vai conduzir. Apenas valide:)*
+**Vendedor:** *(silêncio + deixa o áudio rodar)*
+
+**Lead:** "Segurança pra atender esses casos. E parar de perder paciente. Se eu atender neuro também, minha clínica cresce muito mais."
+*(Valide brevemente e deixe o próximo bloco rodar)*
+
+---
+
+### EXEMPLO 3 — Acolhendo após BLOCO 3 (dados de mercado)
+
+**Lead:** "Nossa, sim! Não tinha parado pra pensar nisso assim. Faz todo sentido."
+**Vendedor:** "Fico feliz que você percebe isso! Quem enxerga o potencial da área cedo sai na frente. 😊"
+
+**Lead:** "Sim demais. Na minha clínica já teria retorno rápido disso."
+**Vendedor:** "Exatamente! Quem já tem estrutura montada aproveita muito mais rápido. 😊"
+
+**Lead:** "Sim, com certeza. Já percebi que quem tem duas pós específicas consegue se posicionar muito melhor."
+**Vendedor:** *(apenas valida com uma frase curta, sem desenvolver)*
+
+---
+
+### EXEMPLO 4 — Acolhendo pergunta sobre EAD durante o script
+
+**Lead:** "Mas como funciona sendo EAD? Eu consigo tirar dúvida?"
+**Vendedor:** "Que bom que faz sentido! Sobre o EAD, deixa eu te explicar como funciona na prática:" *(e deixa o próximo áudio detalhar)*
+
+**Lead:** "É totalmente EAD?"
+**Vendedor:** "Que bom que faz sentido! Sim, é totalmente EAD — e isso é um grande diferencial. 😊" *(1 linha, sem desenvolver mais)*
+
+---
+
+### EXEMPLO 5 — Acolhendo "Já consegue ver seu nome no diploma?"
+
+**Lead:** "Nossa que lindo! Consegui sim kkkkk"
+**Vendedor:** "Já tô vendo seu nome aí! 😄 Agora deixa eu te falar sobre o investimento:"
+
+**Lead:** "Consigo sim. Me fala o valor."
+**Vendedor:** "Ótimo! Vou te apresentar tudo certinho. 😊"
+
+---
+
+### EXEMPLO 6 — OBJEÇÃO DE PREÇO (isolamento + ROI)
+
+**Lead:** "Ai, achei um pouco caro pra falar a verdade."
+**Vendedor:** "Entendo perfeitamente. Se não fosse o valor, teria alguma outra dúvida pra eu esclarecer?"
+
+**Lead:** "Não, o resto eu gostei tudo."
+**Vendedor:** *(áudio)* "Entendo perfeitamente. Olha, dentro da nossa pós você terá acesso a aulas de marketing digital e captação de pacientes. Você pode se inscrever agora, pagar a taxa de matrícula, e sua próxima mensalidade será cobrada em 30 dias. Assim você tem acesso ao curso e pode implementar as técnicas que ensinamos para aumentar sua captação de pacientes e levantar capital para investir na pós."
+
+**Lead:** "Hm, faz sentido. Posso parcelar a matrícula no cartão?"
+**Vendedor:** "Pode sim! Deixa eu te enviar o link certinho. 😊"
+
+---
+
+### EXEMPLO 7 — OBJEÇÃO DE PREÇO FORTE (recém-formada, salário baixo)
+
+**Lead:** "Nossa, achei caro sim. Tô ganhando pouco ainda, é difícil."
+**Vendedor:** "Entendo, Fernanda. Se não fosse o valor, teria alguma outra coisa que te impedisse de começar?"
+
+**Lead:** "Não, só o valor mesmo. O conteúdo eu adorei tudo."
+**Vendedor:** *(áudio explicando matrícula agora + 1ª parcela em 30 dias + módulo de captação de pacientes)*
+
+**Lead:** "Hm, 30 dias antes da primeira mensalidade ajuda bastante. Tem como parcelar a matrícula no cartão?"
+**Vendedor:** "Tem sim! No cartão você consegue parcelar a matrícula sem problema. 😊 Quer que eu te envie o link?"
+
+---
+
+### EXEMPLO 8 — OBJEÇÃO DE TEMPO
+
+**Lead:** "Preciso pensar um pouco."
+**Vendedor:** "Certo, entendo que pensar é importante. Me explica: você vai refletir necessariamente sobre o quê? Se é uma questão do conteúdo, se precisa conversar com alguém, ou se é mais financeira?"
+
+**Lead:** "Financeira não é problema. É que me preocupo com o tempo mesmo. E se não conseguir acompanhar?"
+**Vendedor:** "Essa é uma preocupação super válida. Mas pensa comigo: você já está no hospital atendendo neuro todo dia sem a formação. Com a pós, você vai estudar exatamente o que você já vive na prática — e no seu ritmo. Não tem prazo de entrega de tarefa toda semana. Você acessa quando quiser e consome o conteúdo conforme sua rotina. O pior cenário seria continuar improvisando condutas sem respaldo técnico, sabe?"
+
+---
+
+### EXEMPLO 9 — OBJEÇÃO DE TEMPO (dono de clínica ocupado)
+
+**Lead:** "Oi, tô corrido. Me fala logo o essencial que não tenho muito tempo."
+**Vendedor:** "Entendido, Rafael! Direto ao ponto então."
+
+**Lead:** "Quanto é?"
+**Vendedor:** *(após apresentar a pós rapidamente)* "Rafael, sobre o tempo: a pós é 100% EAD, sem horário fixo. Você acessa a plataforma quando e onde quiser — 20 minutos entre um atendimento e outro já avança. As tutorias ao vivo ficam gravadas pra você ver quando puder. Muitos donos de clínica estudam exatamente nesse formato."
+
+**Lead:** "Isso é o que precisava ouvir. Quanto é?"
+**Vendedor:** "Fico feliz que faz sentido! Vou te apresentar o investimento agora. 😊"
+
+---
+
+### EXEMPLO 10 — FECHAMENTO após objeção resolvida
+
+**Lead:** "É verdade. Assim fica mais tranquilo. Vou fechar. Pode me mandar o link do PIX?"
+**Vendedor:** "Chave PIX: [CHAVE PIX] | Me manda o comprovante assim que fizer. 😊"
+
+**Lead:** "Feito! Mandei."
+**Vendedor:** "Recebi! Bem-vindo! 🚀 Você já atende neuro todo dia — agora vai fazer isso com muito mais segurança e autoridade. Fica à vontade pra me chamar quando precisar!"
+
+---
+
+### EXEMPLO 11 — LEAD JÁ TEM PÓS (objeção de necessidade)
+
+**Lead:** "Já tenho uma pós em saúde da mulher. Não sei se preciso de mais uma ainda."
+**Vendedor:** "Entendo, Priscila! Inclusive isso mostra que você já valoriza qualificação. Me fala: você atende ou recebe indicações de pacientes neurológicos às vezes?"
+
+**Lead:** "Recebo sim. Às vezes me indicam AVE, PC, mas eu mando pra outro colega porque não tenho a formação. Mas confesso que fico com vontade de atender."
+**Vendedor:** "Priscila, isso é muito importante. Você já tem a relação de confiança construída com a família, mas perde o atendimento por falta da especialização."
+
+---
+
+### PADRÕES-CHAVE PARA SEMPRE SEGUIR
+
+1. **Sempre isoler a objeção antes de responder:** "Se não fosse [objeção], teria alguma outra coisa que te impedisse?"
+2. **Nunca responda "está caro" com defesa imediata** — primeiro confirme que é a única barreira
+3. **Argumento financeiro:** matrícula agora + 1ª parcela em 30 dias + módulo de captação paga as parcelas
+4. **Argumento de tempo:** EAD, sem horário fixo, tutorias gravadas, 20 minutos já é suficiente
+5. **Fechamento:** quando lead diz sim, vá direto ao link — não faça mais perguntas
+6. **Tom de celebração no fechamento:** mostre que está feliz pela decisão deles, não que você "vendeu"

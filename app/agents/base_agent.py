@@ -41,7 +41,7 @@ class BaseAgent:
         delay = max(TYPING_MIN_DELAY, min(delay, TYPING_MAX_DELAY))
         await asyncio.sleep(delay)
 
-    def _build_system_prompt(self, lead: Lead, knowledge: str) -> str:
+    def _build_system_prompt(self, lead: Lead, knowledge: str, script_active: bool = False) -> str:
         """
         Monta o system prompt final combinando:
         - Personalidade do agente (definida na subclasse)
@@ -84,15 +84,24 @@ class BaseAgent:
 O lead está no passo {lead.script_step} do script de apresentação.
 O script tem blocos em sequência: qualificação → descoberta de dores → mercado → transição → visão geral → detalhes → pitch de valor → oferta e preço.
 
-REGRAS DE SEQUÊNCIA:
-- Sua função é responder ao que o lead disse e MANTER o fluxo do script.
-- NÃO pule etapas. Cada bloco existe por um motivo estratégico.
-- Se o lead perguntar sobre PREÇO antes do passo 8, responda com UMA frase curta de redirecionamento, como: "Ótimo que quer saber do investimento! Até o final da nossa conversa já te explico tudo sobre como funciona e as opções disponíveis 😊" — e NÃO desenvolva mais, deixe o script continuar.
-- Se o lead fizer perguntas FORA DO SCRIPT (curiosidades, dúvidas técnicas, etc.), responda brevemente e em seguida traga de volta para o próximo passo do script com UMA pergunta de engajamento.
-- NUNCA revele o preço antes do passo 8 do script.
-- Faça NO MÁXIMO UMA pergunta por mensagem. Nunca faça múltiplas perguntas seguidas.
-- NÃO repita perguntas que o script de áudios já fez. Apenas acolha a resposta do lead e avance naturalmente.
-"""
+{"MODO SCRIPT ATIVO — REGRAS ESTRITAS:" if script_active else "MODO LIVRE — Script finalizado:"}
+{"""
+- Sua ÚNICA função agora é acolher brevemente o que o lead disse (1-2 linhas NO MÁXIMO).
+- Exemplos de respostas ideais:
+  "Que bom que você percebe isso, {name}! 😊"
+  "Faz todo sentido! 😊"
+  "Entendi bem, obrigada por compartilhar!"
+  "Ótimo que você está buscando isso! 😊"
+- ZERO perguntas — o áudio do próximo bloco fará isso automaticamente.
+- Se o lead perguntar PREÇO: responda com UMA frase curta: "Ótimo! Até o final já te explico tudo sobre investimento e opções disponíveis 😊"
+- Se o lead fizer uma pergunta técnica: responda em 1 linha e pare.
+- NUNCA revele o preço antes do passo 8.
+""" if script_active else """
+- Agora você conduz a conversa livremente para fechar a matrícula.
+- Foque em objeções, fechamento e confirmação de matrícula.
+- Faça NO MÁXIMO UMA pergunta por mensagem.
+- NUNCA revele o preço antes do passo 8.
+"""}"""
 
     async def _detect_and_update_stage(self, lead: Lead, text: str) -> Lead:
         """
@@ -124,6 +133,7 @@ REGRAS DE SEQUÊNCIA:
         lead: Lead,
         user_message: str,
         knowledge: str,
+        script_active: bool = False,
     ) -> Optional[str]:
         """
         Processa a mensagem do lead e retorna a resposta do agente.
@@ -149,7 +159,7 @@ REGRAS DE SEQUÊNCIA:
         history = await get_history(lead.phone_number, last_n=20)
 
         # 5. Chama o Claude
-        system = self._build_system_prompt(lead, knowledge)
+        system = self._build_system_prompt(lead, knowledge, script_active=script_active)
         try:
             response = client.messages.create(
                 model=settings.anthropic_model,

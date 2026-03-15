@@ -68,10 +68,11 @@ Diferenciais que mais convertem nesse público:
 - 360 horas, certificada pelo MEC
 """
 
-    async def get_response(self, lead: Lead, user_message: str) -> str | None:
+    async def get_response(self, lead: Lead, user_message: str, script_active: bool = False) -> str | None:
         knowledge = load_knowledge(self.course_slug)
         return await self.respond(
             lead=lead,
             user_message=user_message,
             knowledge=knowledge,
+            script_active=script_active,
         )

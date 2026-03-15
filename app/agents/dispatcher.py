@@ -75,40 +75,19 @@ async def dispatch(lead: Lead, user_message: str) -> None:
         logger.info("Primeiro contato — aguardando script engine enviar BLOCO 1.", phone=lead.phone_number)
         return
 
-    # 5. Verifica se o script irá tratar esta mensagem
-    # Exceção: objeções, perguntas de preço ou pedido de humano sempre ativam a IA
-    OVERRIDE_KEYWORDS = [
-        "caro", "preço", "valor", "quanto custa", "quanto é", "investimento",
-        "desconto", "parcel", "pagar", "não tenho", "nao tenho",
-        "não posso", "nao posso", "preciso pensar", "vou pensar",
-        "humano", "atendente", "pessoa real", "falar com alguém",
-    ]
-    message_lower = user_message.lower()
-    has_override = any(kw in message_lower for kw in OVERRIDE_KEYWORDS)
-
-    from app.script.engine import SCRIPTS
-    current_script = SCRIPTS.get(course)
-    if current_script and lead.script_step < len(current_script) and not has_override:
-        current_step = current_script[lead.script_step]
-        if current_step.get("trigger") == "response":
-            logger.info(
-                "Script irá tratar esta mensagem — agente silenciado.",
-                phone=lead.phone_number,
-                step=lead.script_step,
-            )
-            return
-
-    if has_override:
-        logger.info(
-            "Palavra-chave de objeção detectada — IA assume mesmo durante script.",
-            phone=lead.phone_number,
-            step=lead.script_step,
-        )
-
-    # 6. Script finalizado ou passo sem trigger "response" — agente assume
+    # 5. Roteia para o agente especialista
     agent = AGENT_MAP.get(course)
     if agent is None:
         logger.error("Nenhum agente encontrado para o curso.", course=course)
         return
 
-    await agent.get_response(lead=lead, user_message=user_message)
+    # Verifica se o script ainda está ativo para passar o modo correto ao agente
+    from app.script.engine import SCRIPTS
+    current_script = SCRIPTS.get(course)
+    script_active = (
+        current_script is not None
+        and lead.script_step < len(current_script)
+        and current_script[lead.script_step].get("trigger") == "response"
+    )
+
+    await agent.get_response(lead=lead, user_message=user_message, script_active=script_active)

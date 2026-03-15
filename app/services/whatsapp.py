@@ -53,7 +53,7 @@ async def send_audio_by_url(to: str, audio_url: str) -> dict:
     payload = {
         **_base_payload(to),
         "type": "audio",
-        "audio": {"link": audio_url},
+        "audio": {"link": audio_url, "voice": True},
     }
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
@@ -72,7 +72,7 @@ async def send_audio_by_media_id(to: str, media_id: str) -> dict:
     payload = {
         **_base_payload(to),
         "type": "audio",
-        "audio": {"id": media_id},
+        "audio": {"id": media_id, "voice": True},
     }
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(BASE_URL, json=payload, headers=HEADERS)

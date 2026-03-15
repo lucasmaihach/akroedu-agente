@@ -81,13 +81,18 @@ async def dispatch(lead: Lead, user_message: str) -> None:
         logger.error("Nenhum agente encontrado para o curso.", course=course)
         return
 
-    # Verifica se o script ainda está ativo para passar o modo correto ao agente
+    # Verifica se o script ainda está ativo para passar o modo correto ao agente.
+    # script_active=True significa que o AI deve ficar em modo silencioso (1-2 frases,
+    # sem perguntas, sem revelar preço) porque o script de áudios ainda está conduzindo.
+    # Isso deve ser True para TODOS os passos ANTES do passo de preço (passo 9),
+    # independente de o trigger ser "auto" ou "response".
     from app.script.engine import SCRIPTS
+    PRICE_REVEAL_STEP = 9  # índice do bloco 08 — Oferta de Preço + Urgência
     current_script = SCRIPTS.get(course)
     script_active = (
         current_script is not None
         and lead.script_step < len(current_script)
-        and current_script[lead.script_step].get("trigger") == "response"
+        and lead.script_step < PRICE_REVEAL_STEP
     )
 
     await agent.get_response(lead=lead, user_message=user_message, script_active=script_active)

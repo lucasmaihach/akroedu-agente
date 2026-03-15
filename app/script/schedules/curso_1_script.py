@@ -16,6 +16,13 @@ Como usar:
   3. Personalize pre_text e post_text para cada passo.
 """
 
+CURSO_1_CONFIG: dict = {
+    # Passo 2 é o de investimento/preço. IA assume a partir do passo 3.
+    "price_reveal_step": 3,
+    # Na 2ª insistência no preço, pula direto pro passo do preço.
+    "price_skip_to_step": 2,
+}
+
 CURSO_1_SCRIPT: list[dict] = [
     # ── Passo 0 — Boas-vindas imediatas ──────────────────────────────────────
     {

@@ -10,6 +10,13 @@ Cada passo do script é um dicionário com:
                            "response" → só dispara quando o lead responder algo
 """
 
+CURSO_2_CONFIG: dict = {
+    # Passo 3 é o de investimento/preço. IA assume a partir do passo 4.
+    "price_reveal_step": 4,
+    # Na 2ª insistência no preço, pula direto pro passo do preço.
+    "price_skip_to_step": 3,
+}
+
 CURSO_2_SCRIPT: list[dict] = [
     # ── Passo 0 — Boas-vindas imediatas ──────────────────────────────────────
     {

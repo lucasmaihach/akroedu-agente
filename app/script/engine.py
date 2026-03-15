@@ -13,9 +13,9 @@ from app.memory.session import (
     cache_media_id,
 )
 from app.services import whatsapp
-from app.script.schedules.curso_1_script import CURSO_1_SCRIPT
-from app.script.schedules.curso_2_script import CURSO_2_SCRIPT
-from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT
+from app.script.schedules.curso_1_script import CURSO_1_SCRIPT, CURSO_1_CONFIG
+from app.script.schedules.curso_2_script import CURSO_2_SCRIPT, CURSO_2_CONFIG
+from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT, POS_FISIO_NEURO_CONFIG
 
 logger = structlog.get_logger()
 
@@ -61,6 +61,13 @@ SCRIPTS = {
     CourseSlug.CURSO_1: CURSO_1_SCRIPT,
     CourseSlug.CURSO_2: CURSO_2_SCRIPT,
     CourseSlug.POS_FISIO_NEURO: POS_FISIO_NEURO_SCRIPT,
+}
+
+# Mapa de curso → configurações (price_reveal_step, price_skip_to_step, etc.)
+SCRIPT_CONFIGS = {
+    CourseSlug.CURSO_1: CURSO_1_CONFIG,
+    CourseSlug.CURSO_2: CURSO_2_CONFIG,
+    CourseSlug.POS_FISIO_NEURO: POS_FISIO_NEURO_CONFIG,
 }
 
 

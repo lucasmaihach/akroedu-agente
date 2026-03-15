@@ -23,6 +23,16 @@ Status dos áudios:
   12_followup_silencio_4.opus → ⚠️  FALTA GRAVAR — FOLLOW-UP custo de não fazer (50s)
 """
 
+POS_FISIO_NEURO_CONFIG: dict = {
+    # Índice do passo APÓS o áudio de preço ser enviado.
+    # Antes desse passo, a IA fica em modo silencioso (não assume a conversa).
+    "price_reveal_step": 10,
+
+    # Índice para onde o script pula quando o lead insiste no preço pela 2ª vez.
+    # Deve apontar para o bloco de detalhamento que encadeia automaticamente até o preço.
+    "price_skip_to_step": 6,
+}
+
 POS_FISIO_NEURO_SCRIPT: list[dict] = [
 
     # ── BLOCO 1 — Boas-vindas + Qualificação ─────────────────────────────────

@@ -10,10 +10,6 @@ from app.services import whatsapp
 
 logger = structlog.get_logger()
 
-# Passo do script para onde o lead é redirecionado na 2ª insistência de preço
-# Índice 6 = BLOCO 6 (Detalhamento Técnico), que encadeia automaticamente até o preço
-PRICE_SKIP_TO_STEP = 6
-
 # Palavras que indicam que o lead está perguntando sobre preço
 _PRICE_KEYWORDS = [
     "preço", "preco", "valor", "quanto", "custa", "custo",
@@ -102,15 +98,17 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
     # Verifica se o script ainda está ativo para passar o modo correto ao agente.
     # script_active=True significa que o AI deve ficar em modo silencioso (1-2 frases,
     # sem perguntas, sem revelar preço) porque o script de áudios ainda está conduzindo.
-    # Isso deve ser True para TODOS os passos ANTES do passo de preço (passo 9),
-    # independente de o trigger ser "auto" ou "response".
-    from app.script.engine import SCRIPTS
-    PRICE_REVEAL_STEP = 10  # índice após o bloco 08 — IA só assume depois que o áudio de preço foi enviado
+    # Os limiares de passo são definidos por curso no próprio arquivo do script.
+    from app.script.engine import SCRIPTS, SCRIPT_CONFIGS
+    course_config = SCRIPT_CONFIGS.get(course, {})
+    price_reveal_step = course_config.get("price_reveal_step", 999)
+    price_skip_to_step = course_config.get("price_skip_to_step", 0)
+
     current_script = SCRIPTS.get(course)
     script_active = (
         current_script is not None
         and lead.script_step < len(current_script)
-        and lead.script_step < PRICE_REVEAL_STEP
+        and lead.script_step < price_reveal_step
     )
 
     # Enquanto o script estiver ativo (qualquer step antes do preço), a AI fica
@@ -128,7 +126,7 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                     to=lead.phone_number,
                     text=(
                         "Claro, saber o preço é super importante! 😊\n"
-                        "Posso te contar como a pós funciona antes? "
+                        "Posso te contar como funciona antes? "
                         "Assim você consegue avaliar muito melhor se o investimento faz sentido pra você."
                     ),
                 )
@@ -140,18 +138,18 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                 return False  # não avança o script
 
             else:
-                # Segunda vez ou mais: cede e pula para o BLOCO 6 (encadeia até o preço)
+                # Segunda vez ou mais: cede e pula para o bloco de detalhes do curso
                 await whatsapp.send_text(
                     to=lead.phone_number,
                     text="Claro, vou te explicar! 😊",
                 )
-                await update_lead_field(lead.phone_number, script_step=PRICE_SKIP_TO_STEP)
+                await update_lead_field(lead.phone_number, script_step=price_skip_to_step)
                 logger.info(
-                    "💰 Lead insistiu no preço (2ª vez) — pulando para BLOCO 6.",
+                    "💰 Lead insistiu no preço (2ª vez) — pulando para bloco de preço.",
                     phone=lead.phone_number,
-                    new_step=PRICE_SKIP_TO_STEP,
+                    new_step=price_skip_to_step,
                 )
-                return True  # avança (agora está no BLOCO 6)
+                return True  # avança (agora está no bloco configurado)
 
         logger.info(
             "Script ativo: AI silenciada, avançando script.",

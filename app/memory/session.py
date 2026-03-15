@@ -133,3 +133,22 @@ async def set_script_lock(phone: str, ttl_seconds: int = 60) -> bool:
 async def release_script_lock(phone: str) -> None:
     r = get_redis()
     await r.delete(_script_lock_key(phone))
+
+
+# ── Deduplicação de mensagens da Meta ─────────────────────────────────────────
+
+def _msg_seen_key(message_id: str) -> str:
+    return f"msg_seen:{message_id}"
+
+
+async def is_message_already_processed(message_id: str) -> bool:
+    """
+    Verifica se uma mensagem já foi processada (evita duplo disparo da Meta).
+    Marca como processada com TTL de 5 minutos.
+    """
+    r = get_redis()
+    key = _msg_seen_key(message_id)
+    # SETNX: só define se NÃO existir. Retorna True se acabou de criar (novo),
+    # False se já existia (duplicata).
+    result = await r.set(key, "1", nx=True, ex=300)  # TTL: 5 minutos
+    return result is None  # None = chave já existia = mensagem duplicada

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, HTTPException
 
 from app.config import settings
 from app.models.message import MetaWebhookPayload, IncomingMessage
-from app.memory.session import get_or_create_lead, append_message
+from app.memory.session import get_or_create_lead, is_message_already_processed
 from app.agents.dispatcher import dispatch
 from app.script.engine import run_script_step
 
@@ -76,6 +76,11 @@ async def _handle_incoming_message(msg, value) -> None:
         contact_name = value.contacts[0].profile.get("name") if value.contacts else None
         message_type = msg.type
 
+        # Deduplicação: Meta pode reenviar o mesmo webhook mais de uma vez
+        if await is_message_already_processed(msg.id):
+            logger.info("Mensagem duplicada ignorada.", msg_id=msg.id, phone=phone_number)
+            return
+
         logger.info(
             "📥 Nova mensagem recebida.",
             phone=phone_number,
@@ -95,10 +100,8 @@ async def _handle_incoming_message(msg, value) -> None:
         # Obtém ou cria o lead
         lead = await get_or_create_lead(phone=phone_number, name=contact_name)
 
-        # Salva a mensagem no histórico
-        await append_message(phone_number, role="user", content=text)
-
         # Dispara o agente para responder
+        # (o histórico da mensagem do usuário é salvo dentro de dispatch/agent)
         await dispatch(lead=lead, user_message=text)
 
         # Agenda o próximo passo do script (se houver)

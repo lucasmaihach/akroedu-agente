@@ -9,31 +9,47 @@ logger = structlog.get_logger()
 
 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-# Lista de cursos disponíveis para o router conhecer
-COURSES_DESCRIPTION = """
-- curso_1: [NOME DO CURSO 1] — [breve descrição do curso 1]
-- curso_2: [NOME DO CURSO 2] — [breve descrição do curso 2]
-- pos_fisio_neuro: Pós-Graduação em Fisioterapia Neurofuncional — para fisioterapeutas que querem se especializar em neurorreabilitação (adulto, pediátrico e home care)
-"""
 
-ROUTER_SYSTEM_PROMPT = f"""
+def _build_router_prompt() -> str:
+    """
+    Monta o system prompt do router dinamicamente a partir dos configs de cada script.
+    Para adicionar um novo produto, basta registrá-lo em engine.SCRIPT_CONFIGS
+    com os campos 'name' e 'keywords' — o router passa a reconhecê-lo automaticamente.
+    """
+    from app.script.engine import SCRIPT_CONFIGS
+
+    lines = []
+    valid_slugs = []
+    keyword_rules = []
+
+    for slug, config in SCRIPT_CONFIGS.items():
+        name = config.get("name", slug.value)
+        keywords = config.get("keywords", [])
+        lines.append(f"- {slug.value}: {name}")
+        valid_slugs.append(slug.value)
+        if keywords:
+            kw_str = ", ".join(keywords)
+            keyword_rules.append(
+                f"- Se o lead mencionou {kw_str}, retorne: {slug.value}"
+            )
+
+    courses_block = "\n".join(lines)
+    valid_block = "\n".join(f"- {s}" for s in valid_slugs) + "\n- unknown"
+    rules_block = "\n".join(keyword_rules) if keyword_rules else "- Use o contexto da conversa para identificar o curso."
+
+    return f"""
 Você é um classificador silencioso de intenção de leads.
 Sua única tarefa é identificar qual curso de pós-graduação o lead tem interesse,
 com base na conversa fornecida.
 
 Cursos disponíveis:
-{COURSES_DESCRIPTION}
+{courses_block}
 
 Responda APENAS com um dos valores abaixo (sem explicação, sem pontuação):
-- curso_1
-- curso_2
-- pos_fisio_neuro
-- unknown
+{valid_block}
 
 Regras:
-- Se o lead mencionou explicitamente o nome ou área do curso 1, retorne: curso_1
-- Se o lead mencionou explicitamente o nome ou área do curso 2, retorne: curso_2
-- Se o lead mencionou fisioterapia, neurologia, fisio neuro, neurofuncional ou reabilitação neurológica, retorne: pos_fisio_neuro
+{rules_block}
 - Se não for possível determinar, retorne: unknown
 """
 
@@ -57,7 +73,7 @@ async def identify_course(lead: Lead, user_message: str) -> CourseSlug:
         response = client.messages.create(
             model=settings.anthropic_model,
             max_tokens=10,
-            system=ROUTER_SYSTEM_PROMPT,
+            system=_build_router_prompt(),
             messages=messages_for_router,
         )
         raw = response.content[0].text.strip().lower()

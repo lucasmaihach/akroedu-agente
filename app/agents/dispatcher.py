@@ -28,13 +28,25 @@ AGENT_MAP = {
     CourseSlug.POS_FISIO_NEURO: PosFisioNeuroAgent(),
 }
 
-# Mensagem de boas-vindas quando o curso ainda não foi identificado
-WELCOME_MESSAGE = (
-    "Oi! Tudo bem? 😊 Que bom que você entrou em contato!\n\n"
-    "Me conta, qual dos nossos cursos de pós-graduação você quer saber mais?\n"
-    "Temos a *Pós-Graduação em Fisioterapia Neurofuncional*. "
-    "Qual deles chamou mais atenção pra você?"
-)
+def _build_welcome_message() -> str:
+    """
+    Monta a mensagem de boas-vindas listando os cursos disponíveis dinamicamente.
+    Para adicionar um novo curso, basta registrá-lo em engine.SCRIPT_CONFIGS
+    com o campo 'name' — a mensagem passa a incluí-lo automaticamente.
+    """
+    from app.script.engine import SCRIPT_CONFIGS
+    course_names = [
+        f"• *{cfg['name']}*"
+        for cfg in SCRIPT_CONFIGS.values()
+        if cfg.get("name") and not cfg["name"].startswith("[")
+    ]
+    courses_block = "\n".join(course_names) if course_names else "• Nossos cursos de pós-graduação"
+    return (
+        "Oi! Tudo bem? 😊 Que bom que você entrou em contato!\n\n"
+        "Me conta, qual dos nossos cursos você quer saber mais?\n\n"
+        f"{courses_block}\n\n"
+        "Qual deles chamou mais atenção pra você?"
+    )
 
 
 async def dispatch(lead: Lead, user_message: str) -> bool:
@@ -64,7 +76,7 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                 lead.phone_number,
                 stage=LeadStage.IDENTIFYING,
             )
-            await whatsapp.send_text(to=lead.phone_number, text=WELCOME_MESSAGE)
+            await whatsapp.send_text(to=lead.phone_number, text=_build_welcome_message())
         else:
             # Lead já está em conversa mas não identificou o curso
             await whatsapp.send_text(

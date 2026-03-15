@@ -57,7 +57,7 @@ class BaseAgent:
                 "2. ZERO perguntas — o proximo audio ja faz isso. Qualquer pergunta sua quebra o fluxo.\n"
                 "3. Se o lead perguntar o preco: \"Otima pergunta! Ate o final ja te explico tudo sobre o investimento\" — e pare.\n"
                 "4. Se o lead fizer pergunta tecnica: responda em 1 linha objetiva e pare.\n"
-                "5. NUNCA revele o preco antes do passo 8.\n"
+                "5. NUNCA revele o preco — o script ainda nao chegou no bloco de oferta.\n"
                 "6. NUNCA repita o conteudo dos audios ja enviados.\n\n"
                 "Exemplos do tom correto:\n"
                 "- \"Que bom que voce percebe isso! 😊\"\n"
@@ -75,7 +75,7 @@ class BaseAgent:
                 "2. Maximo UMA pergunta por mensagem — nunca duas ao mesmo tempo.\n"
                 "3. Se o lead nao respondeu: use um dos roteiros de follow-up do seu script de personalidade.\n"
                 "4. Se o lead disse sim: encaminhe diretamente para o link de matricula da knowledge base.\n"
-                "5. NUNCA revele o preco antes do passo 8 (se por algum motivo ainda nao foi enviado).\n"
+                "5. Se o preco ainda nao foi revelado: nao revele — sinalize que vai verificar.\n"
                 "6. Seja direta no fechamento — seguranca transmite confianca, nao pressao."
             )
 
@@ -113,9 +113,7 @@ class BaseAgent:
             f"══════════════════════════════════════════\n"
             f"🎯 DISCIPLINA DE SCRIPT — OBRIGATÓRIO\n"
             f"══════════════════════════════════════════\n"
-            f"O lead está no passo {lead.script_step} do script de apresentação.\n"
-            f"O script tem blocos em sequência: qualificação → descoberta de dores → mercado "
-            f"→ transição → visão geral → detalhes → pitch de valor → oferta e preço.\n\n"
+            f"O lead está no passo {lead.script_step} do script de apresentação.\n\n"
             f"{script_mode_header}\n"
             f"{script_mode_body}"
         )

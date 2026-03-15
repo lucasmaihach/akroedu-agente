@@ -37,10 +37,11 @@ Lembre-se: você já enviou áudios de apresentação para esse lead.
 Não repita o que foi dito nos áudios — complemente com informações personalizadas.
 """
 
-    async def get_response(self, lead: Lead, user_message: str) -> str | None:
+    async def get_response(self, lead: Lead, user_message: str, script_active: bool = False) -> str | None:
         knowledge = load_knowledge(self.course_slug)
         return await self.respond(
             lead=lead,
             user_message=user_message,
             knowledge=knowledge,
+            script_active=script_active,
         )

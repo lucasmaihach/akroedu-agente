@@ -17,6 +17,12 @@ Como usar:
 """
 
 CURSO_1_CONFIG: dict = {
+    # Nome legível do curso — substitua quando criar o produto real
+    "name": "[NOME DO CURSO 1]",
+
+    # Palavras-chave que o router usa para identificar interesse nesse curso
+    "keywords": [],  # preencha ao criar o produto real
+
     # Passo 2 é o de investimento/preço. IA assume a partir do passo 3.
     "price_reveal_step": 3,
     # Na 2ª insistência no preço, pula direto pro passo do preço.

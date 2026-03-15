@@ -24,6 +24,16 @@ Status dos áudios:
 """
 
 POS_FISIO_NEURO_CONFIG: dict = {
+    # Nome legível do curso — usado no WELCOME_MESSAGE e no router
+    "name": "Pós-Graduação em Fisioterapia Neurofuncional",
+
+    # Palavras-chave que o router usa para identificar o interesse nesse curso
+    "keywords": [
+        "fisioterapia", "fisioterapeuta", "fisio", "neurologia",
+        "neurofuncional", "neurorreabilitação", "reabilitação neurológica",
+        "neuro", "home care fisio",
+    ],
+
     # Índice do passo APÓS o áudio de preço ser enviado.
     # Antes desse passo, a IA fica em modo silencioso (não assume a conversa).
     "price_reveal_step": 10,

@@ -172,7 +172,8 @@ async def run_script_step(phone: str) -> bool:
             await whatsapp.send_text(to=phone, text=post_text)
 
         # Avança o passo do script
-        await update_lead_field(phone, script_step=step_index + 1)
+        next_step_index = step_index + 1
+        await update_lead_field(phone, script_step=next_step_index)
 
         logger.info(
             "🔊 Passo do script executado.",
@@ -180,6 +181,19 @@ async def run_script_step(phone: str) -> bool:
             step=step_index,
             course=lead.course_slug.value,
         )
+
+        # Se o próximo passo tem trigger="auto", agenda execução automática
+        # sem precisar esperar uma mensagem do lead
+        if next_step_index < len(script):
+            next_step = script[next_step_index]
+            if next_step.get("trigger") == "auto":
+                logger.info(
+                    "⏩ Próximo passo é auto — agendando execução automática.",
+                    phone=phone,
+                    next_step=next_step_index,
+                )
+                asyncio.create_task(_delayed_step(phone))
+
         return True
 
     except Exception as e:

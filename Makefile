@@ -101,3 +101,11 @@ new-course:
 		exit 1; \
 	fi
 	python scripts/create_course.py --slug "$(slug)" --name "$(name)" --consultant "$(or $(consultant),[Consultor])"
+
+reset-lead:
+	@if [ -z "$(phone)" ]; then \
+		echo "❌ Uso: make reset-lead phone=5511999999999"; \
+		exit 1; \
+	fi
+	docker compose exec redis redis-cli DEL lead:$(phone) history:$(phone) script_lock:$(phone)
+	@echo "✅ Lead $(phone) resetado (sessão, histórico e lock removidos)"

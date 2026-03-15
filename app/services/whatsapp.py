@@ -240,11 +240,49 @@ async def download_media(media_id: str) -> tuple[bytes, str]:
     return audio_bytes, mime_type
 
 
-async def send_typing_indicator(to: str) -> None:
+async def send_typing_indicator(message_id: str) -> None:
     """
-    Simula digitação — envia status 'typing'.
-    A API oficial não suporta diretamente, mas podemos
-    usar um pequeno delay antes do envio para simular efeito humano.
+    Envia o indicador de digitação ('Digitando...') para o lead.
+    Requer o ID da última mensagem recebida.
+    O indicador dura até 25 segundos ou até o envio da próxima mensagem.
+    Falhas são ignoradas silenciosamente (é um detalhe cosmético).
+    """
+    if not message_id:
+        return
+    payload = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+        "typing_indicator": {"type": "text"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+            resp.raise_for_status()
+            logger.debug("⌨️ Typing indicator enviado.", msg_id=message_id)
+    except Exception as e:
+        logger.debug("⌨️ Typing indicator falhou (ignorado).", error=str(e))
+
+
+async def send_typing_and_wait(message_id: str, duration_seconds: float) -> None:
+    """
+    Mostra o indicador de digitação e aguarda o tempo necessário antes de enviar.
+    Para durações acima de 24s, reenvia o indicador antes de expirar.
     """
     import asyncio
-    await asyncio.sleep(1.5)  # simula pausa antes de responder
+    remaining = max(0.5, duration_seconds)
+    while remaining > 0:
+        await send_typing_indicator(message_id)
+        chunk = min(remaining, 24.0)
+        await asyncio.sleep(chunk)
+        remaining -= chunk
+
+
+def estimate_typing_delay(text: str) -> float:
+    """
+    Estima o tempo de digitação humano para um texto.
+    Baseado em ~4 caracteres/segundo no celular.
+    Mínimo 1.5s, máximo 12s.
+    """
+    delay = len(text) * 0.25  # 4 chars/s
+    return max(1.5, min(12.0, delay))

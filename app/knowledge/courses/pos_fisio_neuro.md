@@ -30,7 +30,7 @@ Exemplo de fala: "O valor integral da pós é R$ 9.500 em 14x de R$ 794. Mas ten
 - Acesso simplificado aos professores para dúvidas em casos clínicos reais
 - **Tutorias ao vivo** em cada módulo para tirar dúvidas
 - Formação prática: protocolos, condutas e orientações clínicas aplicáveis no dia seguinte
-- Módulo de **marketing digital** incluso: como usar o conhecimento para atrair pacientes e cobrar mais
+- Formação prática: do diagnóstico ao protocolo de tratamento aplicável imediatamente
 - Não precisa de TCC
 
 ## Por que se especializar em Fisioterapia Neurofuncional?
@@ -119,12 +119,12 @@ Prescrição, indicação e aplicação de recursos tecnológicos.
 - Capacidade de explicar o tratamento com propriedade para paciente e família
 - Atendimento de adultos, crianças e home care neurológico
 - Valorização profissional: fisioterapeutas especialistas cobram 40-60% mais por sessão
-- Presença digital e captação de pacientes de alto valor (módulo de marketing)
+- Segurança técnica para aceitar casos que hoje recusa e cobrar mais por isso
 
 ## Objeções Comuns e Como Responder
 
 ### "Está caro / não tenho dinheiro"
-Entendo. Mas olha: a pós já vem com aulas de marketing digital e captação de pacientes. Você pode fazer a matrícula agora, e sua próxima mensalidade só sai daqui a 30 dias. Nesse tempo você já começa a aplicar as estratégias de captação para levantar o capital do próprio investimento.
+Entendo. Mas olha: você pode fazer a matrícula agora, e sua próxima mensalidade só sai daqui a 30 dias. Nesse tempo você já começa a estudar e a aplicar o que aprende nos seus atendimentos, gerando retorno antes mesmo de pagar a primeira parcela.
 
 ### "Preciso pensar"
 Certo, o que exatamente você vai refletir? Se é sobre o conteúdo, se encaixa no que você busca, se precisa conversar com alguém ou se é uma questão financeira? Me fala para eu te ajudar.
@@ -213,7 +213,7 @@ Estes são exemplos reais de como conduzir cada situação. Use como modelo de l
 **Vendedor:** "Entendo perfeitamente. Se não fosse o valor, teria alguma outra dúvida pra eu esclarecer?"
 
 **Lead:** "Não, o resto eu gostei tudo."
-**Vendedor:** *(áudio)* "Entendo perfeitamente. Olha, dentro da nossa pós você terá acesso a aulas de marketing digital e captação de pacientes. Você pode se inscrever agora, pagar a taxa de matrícula, e sua próxima mensalidade será cobrada em 30 dias. Assim você tem acesso ao curso e pode implementar as técnicas que ensinamos para aumentar sua captação de pacientes e levantar capital para investir na pós."
+**Vendedor:** *(áudio)* "Entendo perfeitamente. Você pode se inscrever agora, pagar a taxa de matrícula, e sua próxima mensalidade será cobrada em 30 dias. Assim você já começa a estudar e a aplicar o conteúdo antes mesmo de pagar a primeira parcela."
 
 **Lead:** "Hm, faz sentido. Posso parcelar a matrícula no cartão?"
 **Vendedor:** "Pode sim! Deixa eu te enviar o link certinho. 😊"

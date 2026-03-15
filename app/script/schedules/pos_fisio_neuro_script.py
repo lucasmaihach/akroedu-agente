@@ -70,6 +70,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/02_amplificacao_dor.opus",
+        "audio_duration_seconds": 82,
         "post_text": "Olha só as notícias que vou te mandar 👇",
         "trigger": "response",
     },
@@ -83,6 +84,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
             "pos_fisio_neuro/noticia_ibge_225.jpg",
         ],
         "audio": "pos_fisio_neuro/03_mercado_dados.opus",
+        "audio_duration_seconds": 48,
         "post_text": (
             "Consegue perceber como se especializar nessa área pode aumentar "
             "seu reconhecimento e melhorar sua remuneração? 🚀"
@@ -107,6 +109,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/04_transicao.opus",
+        "audio_duration_seconds": 61,
         "post_text": "Quer que eu te mostre como nossa pós-graduação pode te ajudar a alcançar isso?",
         "trigger": "response",
     },
@@ -128,6 +131,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/05_visao_geral.opus",
+        "audio_duration_seconds": 63,
         "post_text": "Isso faz sentido pro que você está buscando?",
         "trigger": "response",
     },
@@ -149,6 +153,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/06_detalhes_parte1.opus",
+        "audio_duration_seconds": 59,
         "post_text": (
             "*Módulos da Pós-Graduação:*\n\n"
             "1️⃣ *Neuroanatomia do sistema nervoso*\n"
@@ -212,9 +217,10 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         "delay_seconds": 5,
         "pre_text": None,
         "audio": "pos_fisio_neuro/07_detalhes_parte2.opus",
+        "audio_duration_seconds": 64,
         "mid_text": (
-            "Você vai aprender a usar esse conteúdo para criar um posicionamento online, "
-            "construir presença digital, atrair mais pacientes e cobrar preços mais altos. 💡"
+            "Com essa formação você passa a aceitar casos que hoje recusa, "
+            "cobrar mais por sessão e se posicionar como referência em neuro na sua região. 💡"
         ),
         "images_post": [
             "pos_fisio_neuro/diploma.jpg",
@@ -240,6 +246,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         ],
         "pre_text": None,
         "audio": "pos_fisio_neuro/08_pitch_valor.opus",
+        "audio_duration_seconds": 65,
         "post_text": "Quando você compara a qualidade com o investimento, consegue ver o valor?",
         "trigger": "response",
     },
@@ -248,6 +255,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     {
         "delay_seconds": 0,
         "audio": "pos_fisio_neuro/09_preco_urgencia.opus",
+        "audio_duration_seconds": 61,
         "post_text": [
             "Para garantir sua vaga é só acessar o link abaixo 👇\nhttps://link-de-teste.com/pos-fisio-neuro",
             "Como prefere fazer: PIX ou cartão? 😊",

@@ -42,7 +42,7 @@ Passo 3 → Dados IBGE (225% aumento de remuneração), crescimento do home care
 Passo 4 → Áudio: urgência de agir agora + decisão estratégica de carreira
 Passo 5 → Visão geral da pós: 360h, MEC, adulto + pediátrico + home care, sem TCC
 Passo 6 → Prática clínica e estrutura dos módulos
-Passo 7 → Professores clínicos ativos, tutorias de casos reais, módulo de marketing digital
+Passo 7 → Professores clínicos ativos, tutorias de casos reais e dúvidas de casos clínicos
 Passo 8 → Pitch de valor: custo-benefício vs outras pós do mercado
 Passo 9+ → Oferta: 20x de R$257 (referência: 12x de R$797) + link de matrícula
 
@@ -91,9 +91,9 @@ Primeira mensagem após enviar o preço:
 ROTEIRO — PREÇO / "ESTÁ CARO"
 ────────────────────────────────────────
 "Entendo! Deixa eu colocar em perspectiva:
-São 20 parcelas de R$257 — menos de R$9 por dia.
+São 20 parcelas de R$257, menos de R$9 por dia.
 Um paciente neurológico a mais por mês já cobre mais que a parcela inteira.
-E o módulo de marketing digital da pós te ensina exatamente a captar esses pacientes 😊
+E lembra que você pode fazer a matrícula agora e a primeira mensalidade só sai em 30 dias.
 
 Se não fosse o valor, teria alguma outra coisa te impedindo de garantir sua vaga?"
 
@@ -146,7 +146,7 @@ DIFERENCIAIS QUE MAIS CONVERTEM NESSE PÚBLICO
 - Adulto + pediátrico + home care em UMA só pós — único no mercado
 - Professores que atuam ativamente na clínica, não só na academia
 - Acesso direto ao professor para dúvidas de casos reais dos seus pacientes
-- Módulo de marketing digital incluso — aprende a monetizar o conhecimento
+- Tutorias ao vivo em cada módulo com acesso direto ao professor para casos reais
 - IBGE: 225% de aumento de remuneração com pós-graduação
 - Sem TCC — 360 horas, certificada pelo MEC
 

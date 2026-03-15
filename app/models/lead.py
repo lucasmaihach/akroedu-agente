@@ -31,4 +31,6 @@ class Lead(BaseModel):
     sprinthub_id: Optional[str] = None   # ID do card no SprintHub
     script_step: int = 0                  # Qual passo do script de áudios está
     is_escalated: bool = False
+    price_ask_count: int = 0              # Quantas vezes o lead pediu o preço durante o script
+    last_received_msg_id: Optional[str] = None  # ID da última mensagem recebida (para typing indicator)
     notes: Optional[str] = None          # Observações internas

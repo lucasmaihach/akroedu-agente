@@ -127,15 +127,20 @@ async def _handle_incoming_message(msg, value) -> None:
             logger.info("Mensagem ignorada (tipo não suportado).", type=message_type)
             return
 
-        # Obtém ou cria o lead
+        # Obtém ou cria o lead e salva o ID da mensagem recebida (usado para typing indicator)
+        from app.memory.session import update_lead_field as _upd
         lead = await get_or_create_lead(phone=phone_number, name=contact_name)
+        lead = await _upd(phone_number, last_received_msg_id=msg.id)
 
         # Dispara o agente para responder
         # (o histórico da mensagem do usuário é salvo dentro de dispatch/agent)
-        await dispatch(lead=lead, user_message=text)
+        # dispatch() retorna True se o script deve avançar, False se ele foi pausado
+        # (ex: quando intercepta pergunta de preço na 1ª vez)
+        should_advance_script = await dispatch(lead=lead, user_message=text)
 
-        # Agenda o próximo passo do script (se houver)
-        asyncio.create_task(run_script_step(phone_number))
+        # Agenda o próximo passo do script apenas se o dispatch autorizou
+        if should_advance_script:
+            asyncio.create_task(run_script_step(phone_number))
 
     except Exception as e:
         logger.error("❌ Erro ao processar mensagem.", error=str(e), exc_info=True)

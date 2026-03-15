@@ -20,13 +20,15 @@ from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT
 logger = structlog.get_logger()
 
 
-async def _send_text_bubbles(phone: str, text, delay_between: float = 1.2) -> None:
+async def _send_text_bubbles(phone: str, text, delay_between: float = 1.2, msg_id: str = "") -> None:
     """
     Envia texto ou lista de textos como bolhas separadas no WhatsApp.
-    Simula o comportamento humano de mandar várias mensagens curtas.
+    Mostra indicador de digitação antes de cada bolha e aguarda tempo proporcional.
     """
     items = text if isinstance(text, list) else [text]
     for i, item in enumerate(items):
+        delay = whatsapp.estimate_typing_delay(item)
+        await whatsapp.send_typing_and_wait(msg_id, delay)
         await whatsapp.send_text(to=phone, text=item)
         if i < len(items) - 1:
             await asyncio.sleep(delay_between)
@@ -96,6 +98,9 @@ async def run_script_step(phone: str) -> bool:
 
     step = script[step_index]
 
+    # ID da última mensagem recebida — necessário para typing indicator
+    msg_id = lead.last_received_msg_id or ""
+
     try:
         # Aguarda o delay definido no passo (em segundos)
         delay = step.get("delay_seconds", 0)
@@ -112,6 +117,7 @@ async def run_script_step(phone: str) -> bool:
         lead = await get_lead(phone)
         if lead is None or lead.is_escalated:
             return False
+        msg_id = lead.last_received_msg_id or ""
 
         # Envia acolhimento personalizado antes do bloco (se existir variações).
         # A variação é escolhida deterministicamente pelo telefone — mesmo lead,
@@ -130,6 +136,8 @@ async def run_script_step(phone: str) -> bool:
                     part = part.replace("[nome]", nome)
                 else:
                     part = part.replace(", [nome]", "").replace("[nome]", "").strip()
+                delay = whatsapp.estimate_typing_delay(part)
+                await whatsapp.send_typing_and_wait(msg_id, delay)
                 await whatsapp.send_text(to=phone, text=part)
                 if i < len(parts) - 1:
                     await asyncio.sleep(1.2)
@@ -138,7 +146,7 @@ async def run_script_step(phone: str) -> bool:
         # Envia mensagem de texto pré-passo (opcional) — suporta str ou list[str]
         pre_text = step.get("pre_text")
         if pre_text:
-            await _send_text_bubbles(phone, pre_text)
+            await _send_text_bubbles(phone, pre_text, msg_id=msg_id)
             await asyncio.sleep(1.5)
 
         # Envia imagens ANTES do áudio (notícias, prints, etc.)
@@ -167,13 +175,24 @@ async def run_script_step(phone: str) -> bool:
             else:
                 # Já é um media_id hospedado na Meta
                 await whatsapp.send_audio_by_media_id(to=phone, media_id=audio)
-            await asyncio.sleep(1.5)
+
+            # Aguarda a duração do áudio antes de continuar (realismo)
+            audio_duration = step.get("audio_duration_seconds", 0)
+            if audio_duration > 0:
+                logger.info(
+                    "⏳ Aguardando duração do áudio.",
+                    phone=phone,
+                    step=step_index,
+                    duration=audio_duration,
+                )
+                await asyncio.sleep(audio_duration)
+            else:
+                await asyncio.sleep(1.5)
 
         # Envia texto intermediário após áudio (antes das imagens pós-áudio)
         mid_text = step.get("mid_text")
         if mid_text:
-            await asyncio.sleep(2)
-            await _send_text_bubbles(phone, mid_text)
+            await _send_text_bubbles(phone, mid_text, msg_id=msg_id)
             await asyncio.sleep(1.5)
 
         # Envia imagens APÓS o áudio (diploma, certificados, etc.)
@@ -185,8 +204,7 @@ async def run_script_step(phone: str) -> bool:
         # Envia mensagem de texto pós-áudio (opcional) — suporta str ou list[str]
         post_text = step.get("post_text")
         if post_text:
-            await asyncio.sleep(2)
-            await _send_text_bubbles(phone, post_text)
+            await _send_text_bubbles(phone, post_text, msg_id=msg_id)
 
         # Avança o passo do script
         next_step_index = step_index + 1

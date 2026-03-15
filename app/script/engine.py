@@ -9,6 +9,8 @@ from app.memory.session import (
     update_lead_field,
     set_script_lock,
     release_script_lock,
+    get_cached_media_id,
+    cache_media_id,
 )
 from app.services import whatsapp
 from app.script.schedules.curso_1_script import CURSO_1_SCRIPT
@@ -86,13 +88,21 @@ async def run_script_step(phone: str) -> bool:
         audio = step.get("audio")
         if audio:
             if audio.startswith("http"):
+                # URL externa — envia diretamente por link
                 await whatsapp.send_audio_by_url(to=phone, audio_url=audio)
-            elif "." in audio and settings.app_public_url:
-                # É um nome de arquivo — constrói URL pública para PTT nativo
-                audio_url = f"{settings.app_public_url.rstrip('/')}/audios/{audio}"
-                await whatsapp.send_audio_by_url(to=phone, audio_url=audio_url)
+            elif "." in audio:
+                # Arquivo local — faz upload para a Meta (com cache no Redis)
+                # Isso garante que apareça como PTT com ondas de voz no WhatsApp
+                media_id = await get_cached_media_id(audio)
+                if not media_id:
+                    local_path = f"/app/audios/{audio}"
+                    logger.info("📤 Fazendo upload do áudio para a Meta.", file=audio)
+                    media_id = await whatsapp.upload_audio(local_path)
+                    await cache_media_id(audio, media_id)
+                    logger.info("✅ Upload concluído e media_id em cache.", file=audio, media_id=media_id)
+                await whatsapp.send_audio_by_media_id(to=phone, media_id=media_id)
             else:
-                # media_id hospedado na Meta
+                # Já é um media_id hospedado na Meta
                 await whatsapp.send_audio_by_media_id(to=phone, media_id=audio)
             await asyncio.sleep(1.5)
 

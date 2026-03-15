@@ -135,6 +135,21 @@ async def release_script_lock(phone: str) -> None:
     await r.delete(_script_lock_key(phone))
 
 
+# ── Cache de media_id de áudios (evita re-upload) ────────────────────────────
+
+async def get_cached_media_id(filename: str) -> Optional[str]:
+    """Retorna o media_id em cache para um arquivo de áudio, ou None se não existir."""
+    r = get_redis()
+    val = await r.get(f"media_id:{filename}")
+    return val if val else None
+
+
+async def cache_media_id(filename: str, media_id: str) -> None:
+    """Armazena o media_id de um áudio no Redis por 25 dias (limite Meta: 30 dias)."""
+    r = get_redis()
+    await r.set(f"media_id:{filename}", media_id, ex=60 * 60 * 24 * 25)
+
+
 # ── Deduplicação de mensagens da Meta ─────────────────────────────────────────
 
 def _msg_seen_key(message_id: str) -> str:

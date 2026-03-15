@@ -92,7 +92,16 @@ async def upload_audio(file_path: str) -> str:
         raise FileNotFoundError(f"Arquivo de áudio não encontrado: {file_path}")
 
     # Detecta o mime type pelo extension
-    mime_map = {".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".wav": "audio/wav"}
+    # WhatsApp aceita: audio/aac, audio/mp4, audio/mpeg, audio/amr, audio/ogg;codecs=opus
+    mime_map = {
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/ogg; codecs=opus",  # obrigatório para WhatsApp renderizar como PTT
+        ".m4a": "audio/mp4",
+        ".wav": "audio/wav",
+        ".aac": "audio/aac",
+        ".amr": "audio/amr",
+    }
     mime_type = mime_map.get(path.suffix.lower(), "audio/mpeg")
 
     headers = {"Authorization": f"Bearer {settings.meta_access_token}"}

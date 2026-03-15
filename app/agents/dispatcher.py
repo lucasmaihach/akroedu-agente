@@ -95,18 +95,16 @@ async def dispatch(lead: Lead, user_message: str) -> None:
         and lead.script_step < PRICE_REVEAL_STEP
     )
 
-    # Quando o próximo passo do script tem trigger="response", ele dispara imediatamente
-    # após a mensagem do lead (via run_script_step no webhook). Esse passo já inclui
-    # acolhimento (pre_text) + áudio + pergunta — a AI não precisa responder também.
-    # Responder aqui geraria mensagem dupla: uma da AI e outra do script.
-    if script_active and current_script is not None and lead.script_step < len(current_script):
-        current_trigger = current_script[lead.script_step].get("trigger")
-        if current_trigger == "response":
-            logger.info(
-                "Script response-trigger: AI silenciada para evitar mensagem dupla.",
-                phone=lead.phone_number,
-                step=lead.script_step,
-            )
-            return
+    # Enquanto o script estiver ativo (qualquer step antes do preço), a AI fica
+    # completamente silenciada. O script já tem pre_text + áudio + post_text para
+    # conduzir o lead — a AI respondendo junto geraria mensagem dupla e quebraria
+    # o fluxo. A AI só assume após o step de preço (PRICE_REVEAL_STEP).
+    if script_active:
+        logger.info(
+            "Script ativo: AI silenciada.",
+            phone=lead.phone_number,
+            step=lead.script_step,
+        )
+        return
 
     await agent.get_response(lead=lead, user_message=user_message, script_active=script_active)

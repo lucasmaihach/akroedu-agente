@@ -19,6 +19,29 @@ from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT
 
 logger = structlog.get_logger()
 
+
+async def _send_image(phone: str, image: str) -> None:
+    """
+    Envia uma imagem ao lead.
+    - Se começar com 'http': envia por URL pública.
+    - Se tiver extensão de imagem: faz upload local para a Meta (com cache no Redis).
+    - Caso contrário: trata como media_id já hospedado.
+    """
+    if image.startswith("http"):
+        await whatsapp.send_image_by_url(to=phone, image_url=image)
+    elif "." in image:
+        media_id = await get_cached_media_id(image)
+        if not media_id:
+            local_path = f"/app/images/{image}"
+            logger.info("📤 Fazendo upload da imagem para a Meta.", file=image)
+            media_id = await whatsapp.upload_image(local_path)
+            await cache_media_id(image, media_id)
+            logger.info("✅ Upload de imagem concluído.", file=image, media_id=media_id)
+        await whatsapp.send_image_by_media_id(to=phone, media_id=media_id)
+    else:
+        await whatsapp.send_image_by_media_id(to=phone, media_id=image)
+
+
 # Mapa de curso → script de áudios
 SCRIPTS = {
     CourseSlug.CURSO_1: CURSO_1_SCRIPT,
@@ -101,6 +124,12 @@ async def run_script_step(phone: str) -> bool:
             await whatsapp.send_text(to=phone, text=pre_text)
             await asyncio.sleep(1.5)
 
+        # Envia imagens ANTES do áudio (notícias, prints, etc.)
+        images_before = step.get("images") or []
+        for img in images_before:
+            await _send_image(phone, img)
+            await asyncio.sleep(1.5)
+
         # Envia o áudio
         audio = step.get("audio")
         if audio:
@@ -121,6 +150,19 @@ async def run_script_step(phone: str) -> bool:
             else:
                 # Já é um media_id hospedado na Meta
                 await whatsapp.send_audio_by_media_id(to=phone, media_id=audio)
+            await asyncio.sleep(1.5)
+
+        # Envia texto intermediário após áudio (antes das imagens pós-áudio)
+        mid_text = step.get("mid_text")
+        if mid_text:
+            await asyncio.sleep(2)
+            await whatsapp.send_text(to=phone, text=mid_text)
+            await asyncio.sleep(1.5)
+
+        # Envia imagens APÓS o áudio (diploma, certificados, etc.)
+        images_after = step.get("images_post") or []
+        for img in images_after:
+            await _send_image(phone, img)
             await asyncio.sleep(1.5)
 
         # Envia mensagem de texto pós-áudio (opcional)

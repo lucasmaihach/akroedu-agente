@@ -76,16 +76,15 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         "post_text": "Olha só as notícias que vou te mandar 👇",
         "trigger": "response",
     },
-    # Imagens de notícias (enviadas como texto descritivo — substitua por send_image se disponível)
+    # Imagens de notícias + áudio de dados de mercado
     {
         "delay_seconds": 3,
-        "pre_text": (
-            "📊 *Dados do mercado de neurorreabilitação:*\n\n"
-            "• População brasileira envelhecendo rapidamente\n"
-            "• Crescimento acelerado do home care no Brasil\n"
-            "• Alta demanda por fisioterapeutas especializados\n"
-            "• IBGE: até 225% de aumento de remuneração com pós-graduação"
-        ),
+        "pre_text": None,
+        "images": [
+            "pos_fisio_neuro/noticia_populacao.jpg",
+            "pos_fisio_neuro/noticia_home_care.jpg",
+            "pos_fisio_neuro/noticia_ibge_225.jpg",
+        ],
         "audio": "pos_fisio_neuro/03_mercado_dados.opus",
         "post_text": (
             "Consegue perceber como se especializar nessa área pode aumentar "
@@ -160,11 +159,14 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         "delay_seconds": 5,
         "pre_text": None,
         "audio": "pos_fisio_neuro/07_detalhes_parte2.opus",
-        "post_text": (
+        "mid_text": (
             "Você vai aprender a usar esse conteúdo para criar um posicionamento online, "
-            "construir presença digital, atrair mais pacientes e cobrar preços mais altos. 💡\n\n"
-            "Já consegue ver seu nome escrito nesse diploma? 🎓"
+            "construir presença digital, atrair mais pacientes e cobrar preços mais altos. 💡"
         ),
+        "images_post": [
+            "pos_fisio_neuro/diploma.jpg",
+        ],
+        "post_text": "Já consegue ver seu nome escrito nesse diploma? 🎓",
         "trigger": "auto",
     },
 

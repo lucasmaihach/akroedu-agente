@@ -121,6 +121,76 @@ async def upload_audio(file_path: str) -> str:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def upload_image(file_path: str) -> str:
+    """
+    Faz upload de um arquivo de imagem local para a API da Meta.
+    Retorna o media_id para ser reutilizado em envios futuros.
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Arquivo de imagem não encontrado: {file_path}")
+
+    mime_map = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
+    mime_type = mime_map.get(path.suffix.lower(), "image/jpeg")
+
+    headers = {"Authorization": f"Bearer {settings.meta_access_token}"}
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        with open(path, "rb") as f:
+            resp = await client.post(
+                MEDIA_URL,
+                headers=headers,
+                data={"messaging_product": "whatsapp"},
+                files={"file": (path.name, f, mime_type)},
+            )
+        resp.raise_for_status()
+        media_id = resp.json()["id"]
+        logger.info("🖼 Imagem enviada para a Meta.", filename=path.name, media_id=media_id)
+        return media_id
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def send_image_by_media_id(to: str, media_id: str, caption: str = "") -> dict:
+    """Envia uma imagem usando um media_id já hospedado na Meta."""
+    image_payload: dict = {"id": media_id}
+    if caption:
+        image_payload["caption"] = caption
+    payload = {
+        **_base_payload(to),
+        "type": "image",
+        "image": image_payload,
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+        resp.raise_for_status()
+        logger.info("🖼 Imagem enviada por media_id.", to=to, media_id=media_id)
+        return resp.json()
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def send_image_by_url(to: str, image_url: str, caption: str = "") -> dict:
+    """Envia uma imagem a partir de uma URL pública."""
+    image_payload: dict = {"link": image_url}
+    if caption:
+        image_payload["caption"] = caption
+    payload = {
+        **_base_payload(to),
+        "type": "image",
+        "image": image_payload,
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+        resp.raise_for_status()
+        logger.info("🖼 Imagem enviada por URL.", to=to, url=image_url)
+        return resp.json()
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def mark_as_read(message_id: str) -> None:
     """Marca uma mensagem como lida (✓✓ azul)."""
     payload = {

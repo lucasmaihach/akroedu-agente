@@ -1,4 +1,6 @@
 import asyncio
+import re
+import unicodedata
 from typing import Any
 
 import structlog
@@ -7,19 +9,10 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from app.config import settings
 from app.memory.session import get_or_create_lead, update_lead_field
 from app.models.lead import CourseSlug, LeadStage
-from app.script.engine import run_script_step
+from app.script.engine import SCRIPT_CONFIGS, run_script_step
 
 logger = structlog.get_logger()
 router = APIRouter()
-
-# Tags/segmentos que disparam o agente automaticamente
-ACTIVATION_KEYS = {
-    "pos_fisio_neuro",
-    "ativar_agente_pos_neuro",
-    "ativar_agente",
-    "lead_quente_pos_neuro",
-}
-
 
 def _normalize_phone(phone: str) -> str:
     return "".join(ch for ch in (phone or "") if ch.isdigit())
@@ -54,46 +47,89 @@ def _extract_name(payload: dict[str, Any]) -> str | None:
     return str(raw).strip()
 
 
-def _extract_course(payload: dict[str, Any]) -> CourseSlug:
+def _normalize_text(value: str) -> str:
+    clean = unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode("ascii")
+    clean = clean.lower().strip()
+    clean = re.sub(r"[^a-z0-9]+", "_", clean)
+    return re.sub(r"_+", "_", clean).strip("_")
+
+
+def _build_course_aliases() -> dict[CourseSlug, set[str]]:
+    aliases: dict[CourseSlug, set[str]] = {
+        CourseSlug.CURSO_1: {"curso_1", "curso1", "gestao_de_projetos", "lideranca"},
+        CourseSlug.CURSO_2: {"curso_2", "curso2", "marketing_digital", "ecommerce", "e_commerce"},
+        CourseSlug.POS_FISIO_NEURO: {
+            "pos_fisio_neuro",
+            "pos_neuro",
+            "fisio_neuro",
+            "fisioterapia_neurofuncional",
+            "neurofuncional",
+        },
+    }
+
+    for slug, config in SCRIPT_CONFIGS.items():
+        name = config.get("name")
+        if isinstance(name, str) and name.strip() and slug in aliases:
+            aliases[slug].add(_normalize_text(name))
+
+    return aliases
+
+
+COURSE_ALIASES = _build_course_aliases()
+
+
+def _extract_product_name(payload: dict[str, Any]) -> str | None:
     lead_data = payload.get("lead") or {}
     raw = (
+        _extract_nested(payload, "product_name", "produto_nome", "product", "produto", "offer", "oferta", "pipeline_name", "pipeline")
+        or _extract_nested(lead_data, "product_name", "produto_nome", "product", "produto", "offer", "oferta", "pipeline_name", "pipeline")
+    )
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def _course_from_token(token: str) -> CourseSlug:
+    if not token:
+        return CourseSlug.UNKNOWN
+
+    normalized = _normalize_text(token)
+
+    for slug, aliases in COURSE_ALIASES.items():
+        if normalized in aliases:
+            return slug
+
+    if "neuro" in normalized and ("fisio" in normalized or "fisioterapia" in normalized):
+        return CourseSlug.POS_FISIO_NEURO
+
+    if ("gestao" in normalized and "projet" in normalized) or "lideranca" in normalized:
+        return CourseSlug.CURSO_1
+
+    if "marketing" in normalized and ("digital" in normalized or "ecommerce" in normalized):
+        return CourseSlug.CURSO_2
+
+    return CourseSlug.UNKNOWN
+
+
+def _extract_course(payload: dict[str, Any], product_name: str | None) -> CourseSlug:
+    lead_data = payload.get("lead") or {}
+    raw_course = (
         _extract_nested(payload, "course_slug", "course", "curso")
         or _extract_nested(lead_data, "course_slug", "course", "curso")
-        or ""
     )
-    normalized = str(raw).strip().lower().replace(" ", "_")
-    return CourseSlug.POS_FISIO_NEURO if normalized in {"pos_fisio_neuro", "pós_fisio_neuro", "pos_neuro"} else CourseSlug.UNKNOWN
 
+    candidates = [
+        str(raw_course).strip() if raw_course is not None else "",
+        product_name or "",
+    ]
 
-def _extract_activation_tokens(payload: dict[str, Any]) -> set[str]:
-    tokens: set[str] = set()
+    for candidate in candidates:
+        slug = _course_from_token(candidate)
+        if slug != CourseSlug.UNKNOWN:
+            return slug
 
-    segment = payload.get("segment") or payload.get("segmento")
-    if isinstance(segment, str) and segment.strip():
-        tokens.add(segment.strip().lower().replace(" ", "_"))
-
-    tags = payload.get("tags") or []
-    if isinstance(tags, list):
-        for tag in tags:
-            if isinstance(tag, str):
-                norm = tag.strip().lower().replace(" ", "_")
-                if norm:
-                    tokens.add(norm)
-            elif isinstance(tag, dict):
-                name = (tag.get("name") or tag.get("nome") or "").strip().lower().replace(" ", "_")
-                if name:
-                    tokens.add(name)
-
-    lead_data = payload.get("lead") or {}
-    lead_tags = lead_data.get("tags") or []
-    if isinstance(lead_tags, list):
-        for tag in lead_tags:
-            if isinstance(tag, str):
-                norm = tag.strip().lower().replace(" ", "_")
-                if norm:
-                    tokens.add(norm)
-
-    return tokens
+    return CourseSlug.UNKNOWN
 
 
 def _authorize(webhook_key: str | None) -> None:
@@ -107,11 +143,12 @@ async def receive_sprinthub_webhook(
     x_webhook_key: str | None = Header(default=None),
 ):
     """
-    Recebe webhook do CRM para ativação outbound do agente.
+    Recebe webhook de novo lead vindo do CRM (SprintHub).
 
-    Fluxo:
-    - Se lead entrar no segmento/tag de ativação da pós neuro, iniciamos script automaticamente.
-    - Não depende do lead enviar mensagem primeiro no WhatsApp.
+    Regra de ativação:
+    - O CRM envia automaticamente a cada novo lead.
+    - O agente é definido pelo nome do produto/curso recebido no payload.
+    - Não depende de tags/segmentos.
     """
     _authorize(x_webhook_key)
     payload = await request.json()
@@ -120,23 +157,22 @@ async def receive_sprinthub_webhook(
     if not phone:
         return {"status": "ignored", "reason": "missing_phone"}
 
-    course = _extract_course(payload)
-    tokens = _extract_activation_tokens(payload)
-    should_activate = course == CourseSlug.POS_FISIO_NEURO and bool(tokens.intersection(ACTIVATION_KEYS))
+    product_name = _extract_product_name(payload)
+    course = _extract_course(payload, product_name)
 
-    if not should_activate:
+    if course == CourseSlug.UNKNOWN:
         return {
             "status": "ignored",
             "reason": "activation_not_matched",
             "course": course.value,
-            "tokens": sorted(tokens),
+            "product_name": product_name,
         }
 
     name = _extract_name(payload)
     lead = await get_or_create_lead(phone=phone, name=name)
 
-    # Evita disparo duplicado se o script já iniciou para esse lead.
-    if lead.course_slug == CourseSlug.POS_FISIO_NEURO and lead.stage == LeadStage.NURTURING and lead.script_step > 0:
+    # Evita disparo duplicado se o script já iniciou para esse mesmo curso.
+    if lead.course_slug == course and lead.stage == LeadStage.NURTURING and lead.script_step > 0:
         return {
             "status": "ignored",
             "reason": "already_running",
@@ -147,7 +183,7 @@ async def receive_sprinthub_webhook(
     lead = await update_lead_field(
         phone,
         name=name or lead.name,
-        course_slug=CourseSlug.POS_FISIO_NEURO,
+        course_slug=course,
         stage=LeadStage.NURTURING,
         script_step=0,
         is_escalated=False,
@@ -167,7 +203,7 @@ async def receive_sprinthub_webhook(
     logger.info(
         "✅ Agente ativado por webhook do CRM.",
         phone=phone,
-        tokens=sorted(tokens),
+        product_name=product_name,
         course=lead.course_slug.value,
     )
 
@@ -176,5 +212,5 @@ async def receive_sprinthub_webhook(
         "phone": phone,
         "course": lead.course_slug.value,
         "stage": lead.stage.value,
-        "tokens": sorted(tokens),
+        "product_name": product_name,
     }

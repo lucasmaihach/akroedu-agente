@@ -65,6 +65,9 @@ def _build_course_aliases() -> dict[CourseSlug, set[str]]:
             "fisio_neuro",
             "fisioterapia_neurofuncional",
             "neurofuncional",
+            "pos_fineu",
+            "pos_fisioneuro",
+            "pos_fisio_neurofuncional",
         },
     }
 
@@ -106,6 +109,10 @@ def _course_from_token(token: str) -> CourseSlug:
             return slug
 
     if "neuro" in normalized and ("fisio" in normalized or "fisioterapia" in normalized):
+        return CourseSlug.POS_FISIO_NEURO
+
+    # Variações curtas usadas em CRMs (ex.: "pos_fineu")
+    if "fineu" in normalized or "fisioneuro" in normalized:
         return CourseSlug.POS_FISIO_NEURO
 
     if ("gestao" in normalized and "projet" in normalized) or "lideranca" in normalized:

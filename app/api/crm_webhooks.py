@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import unicodedata
 from typing import Any
@@ -28,8 +29,8 @@ def _extract_nested(payload: dict[str, Any], *keys: str) -> Any:
 def _extract_phone(payload: dict[str, Any]) -> str:
     lead_data = payload.get("lead") or {}
     raw = (
-        _extract_nested(payload, "phone", "telefone", "whatsapp", "mobile")
-        or _extract_nested(lead_data, "phone", "telefone", "whatsapp", "mobile")
+        _extract_nested(payload, "phone", "telefone", "whatsapp", "mobile", "celular")
+        or _extract_nested(lead_data, "phone", "telefone", "whatsapp", "mobile", "celular")
         or ""
     )
     return _normalize_phone(str(raw))
@@ -80,9 +81,13 @@ COURSE_ALIASES = _build_course_aliases()
 
 def _extract_product_name(payload: dict[str, Any]) -> str | None:
     lead_data = payload.get("lead") or {}
+    opportunity_data = payload.get("oportunidade") or payload.get("opportunity") or {}
+    custom_fields_data = payload.get("campos_customizados") or payload.get("custom_fields") or {}
     raw = (
-        _extract_nested(payload, "product_name", "produto_nome", "product", "produto", "offer", "oferta", "pipeline_name", "pipeline")
-        or _extract_nested(lead_data, "product_name", "produto_nome", "product", "produto", "offer", "oferta", "pipeline_name", "pipeline")
+        _extract_nested(payload, "product_name", "produto_nome", "product", "produto", "offer", "oferta", "pipeline_name", "pipeline", "informacao05")
+        or _extract_nested(lead_data, "product_name", "produto_nome", "product", "produto", "offer", "oferta", "pipeline_name", "pipeline", "informacao05")
+        or _extract_nested(opportunity_data, "product_name", "produto_nome", "product", "produto", "offer", "oferta", "pipeline_name", "pipeline", "titulo", "title")
+        or _extract_nested(custom_fields_data, "product_name", "produto_nome", "product", "produto", "offer", "oferta", "informacao05")
     )
     if raw is None:
         return None
@@ -114,9 +119,11 @@ def _course_from_token(token: str) -> CourseSlug:
 
 def _extract_course(payload: dict[str, Any], product_name: str | None) -> CourseSlug:
     lead_data = payload.get("lead") or {}
+    opportunity_data = payload.get("oportunidade") or payload.get("opportunity") or {}
     raw_course = (
         _extract_nested(payload, "course_slug", "course", "curso")
         or _extract_nested(lead_data, "course_slug", "course", "curso")
+        or _extract_nested(opportunity_data, "course_slug", "course", "curso")
     )
 
     candidates = [
@@ -130,6 +137,71 @@ def _extract_course(payload: dict[str, Any], product_name: str | None) -> Course
             return slug
 
     return CourseSlug.UNKNOWN
+
+
+def _extract_sprinthub_ids(payload: dict[str, Any]) -> tuple[str | None, str | None]:
+    lead_data = payload.get("lead") or {}
+    opportunity_data = payload.get("oportunidade") or payload.get("opportunity") or {}
+
+    lead_id = _extract_nested(payload, "lead_id", "contato_id") or _extract_nested(lead_data, "id", "lead_id", "contato_id")
+    opportunity_id = _extract_nested(payload, "opportunity_id", "oportunidade_id") or _extract_nested(opportunity_data, "id", "opportunity_id", "oportunidade_id")
+
+    lead_id_text = str(lead_id).strip() if lead_id not in (None, "") else None
+    opportunity_id_text = str(opportunity_id).strip() if opportunity_id not in (None, "") else None
+    return lead_id_text, opportunity_id_text
+
+
+def _extract_crm_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
+    lead_data = payload.get("lead") or {}
+    opportunity_data = payload.get("oportunidade") or payload.get("opportunity") or {}
+    custom_fields_data = payload.get("campos_customizados") or payload.get("custom_fields") or {}
+    meta_data = payload.get("meta") or {}
+
+    return {
+        "lead": {
+            "id": _extract_nested(lead_data, "id", "lead_id"),
+            "nome": _extract_nested(lead_data, "nome", "name"),
+            "email": _extract_nested(lead_data, "email"),
+            "whatsapp": _extract_nested(lead_data, "whatsapp", "phone", "telefone", "mobile", "celular"),
+            "telefone": _extract_nested(lead_data, "telefone", "mobile", "celular", "phone"),
+            "cidade": _extract_nested(lead_data, "cidade", "city"),
+            "estado": _extract_nested(lead_data, "estado", "state"),
+            "empresa": _extract_nested(lead_data, "empresa", "company"),
+        },
+        "oportunidade": {
+            "id": _extract_nested(opportunity_data, "id", "opportunity_id", "oportunidade_id"),
+            "titulo": _extract_nested(opportunity_data, "titulo", "title"),
+            "valor": _extract_nested(opportunity_data, "valor", "value", "opportunity_value"),
+            "status": _extract_nested(opportunity_data, "status", "opportunity_status"),
+            "crm_id": _extract_nested(opportunity_data, "crm_id", "crm_column", "estagio_crm_column_id", "stage_id"),
+            "estagio": _extract_nested(opportunity_data, "estagio", "stage", "stage_name"),
+            "responsavel": _extract_nested(opportunity_data, "responsavel", "responsavel_id", "owner", "owner_id", "opportunity_user"),
+            "data_criacao": _extract_nested(opportunity_data, "data_criacao", "created_at", "opportunity_createDate"),
+        },
+        "campos_customizados": {
+            "produto": _extract_nested(custom_fields_data, "produto", "product", "product_name", "informacao05"),
+            "formacao": _extract_nested(custom_fields_data, "formacao", "education"),
+        },
+        "meta": {
+            "timestamp": _extract_nested(meta_data, "timestamp"),
+        },
+    }
+
+
+def _merge_notes_with_crm(existing_notes: str | None, crm_snapshot: dict[str, Any]) -> str:
+    data: dict[str, Any] = {}
+    if existing_notes:
+        try:
+            parsed = json.loads(existing_notes)
+            if isinstance(parsed, dict):
+                data = parsed
+            else:
+                data = {"legacy_notes": str(existing_notes)}
+        except Exception:
+            data = {"legacy_notes": str(existing_notes)}
+
+    data["sprinthub"] = crm_snapshot
+    return json.dumps(data, ensure_ascii=False)
 
 
 def _authorize(webhook_key: str | None) -> None:
@@ -169,6 +241,9 @@ async def receive_sprinthub_webhook(
         }
 
     name = _extract_name(payload)
+    sprinthub_lead_id, sprinthub_opportunity_id = _extract_sprinthub_ids(payload)
+    crm_snapshot = _extract_crm_snapshot(payload)
+
     lead = await get_or_create_lead(phone=phone, name=name)
 
     # Evita disparo duplicado se o script já iniciou para esse mesmo curso.
@@ -184,6 +259,8 @@ async def receive_sprinthub_webhook(
         phone,
         name=name or lead.name,
         course_slug=course,
+        sprinthub_id=sprinthub_lead_id or lead.sprinthub_id,
+        notes=_merge_notes_with_crm(lead.notes, crm_snapshot),
         stage=LeadStage.NURTURING,
         script_step=0,
         is_escalated=False,
@@ -205,6 +282,9 @@ async def receive_sprinthub_webhook(
         phone=phone,
         product_name=product_name,
         course=lead.course_slug.value,
+        sprinthub_lead_id=sprinthub_lead_id,
+        sprinthub_opportunity_id=sprinthub_opportunity_id,
+        crm_snapshot=crm_snapshot,
     )
 
     return {
@@ -213,4 +293,7 @@ async def receive_sprinthub_webhook(
         "course": lead.course_slug.value,
         "stage": lead.stage.value,
         "product_name": product_name,
+        "sprinthub_lead_id": sprinthub_lead_id,
+        "sprinthub_opportunity_id": sprinthub_opportunity_id,
+        "crm_snapshot": crm_snapshot,
     }

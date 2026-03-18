@@ -13,7 +13,7 @@ Status dos áudios:
   02_amplificacao_dor.opus    → ✅  GRAVADO — BLOCO 3: dor + oportunidade de mercado
   03_mercado_dados.opus       → ✅  GRAVADO — BLOCO 3: dados IBGE + home care
   04_transicao.opus           → ✅  GRAVADO — BLOCO 4: urgência + decisão
-  05_visao_geral.opus         → ⚠️  FALTA GRAVAR — BLOCO 5: visão geral da pós (60s)
+  05_visao_geral.opus         → ✅  GRAVADO — BLOCO 5: visão geral da pós (60s)
   06_detalhes_parte1.opus     → ✅  GRAVADO — BLOCO 6: prática clínica + módulos
   07_detalhes_parte2.opus     → ✅  GRAVADO — BLOCO 6: professores + tutorias + marketing
   08_pitch_valor.opus         → ✅  GRAVADO — BLOCO 7: por que essa pós
@@ -41,6 +41,9 @@ POS_FISIO_NEURO_CONFIG: dict = {
     # Índice para onde o script pula quando o lead insiste no preço pela 2ª vez.
     # Deve apontar para o bloco de detalhamento que encadeia automaticamente até o preço.
     "price_skip_to_step": 6,
+
+    # Passo específico onde o bloco de preço é enviado.
+    "price_offer_step": 8,
 }
 
 POS_FISIO_NEURO_SCRIPT: list[dict] = [
@@ -89,7 +92,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
             ["Entende uma coisa, [nome].", "O que você descreveu não é falta de capacidade, é falta de formação específica.", "E isso tem solução. Vou te mostrar o que muda quando você resolve:"],
         ],
         "pre_text": None,
-        "audio": "pos_fisio_neuro/02_amplificacao_dor.opus",
+        "audio": "1463671382038744",
         "audio_duration_seconds": 82,
         "post_text": "Olha só as notícias que vou te mandar 👇",
         "trigger": "response",
@@ -103,7 +106,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
             "pos_fisio_neuro/noticia_home_care.jpg",
             "pos_fisio_neuro/noticia_ibge_225.jpg",
         ],
-        "audio": "pos_fisio_neuro/03_mercado_dados.opus",
+        "audio": "1619821755960042",
         "audio_duration_seconds": 48,
         "post_text": (
             "Consegue perceber como se especializar nessa área pode aumentar "
@@ -128,7 +131,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
             ["[nome], você acabou de confirmar o que os dados mostram.", "Profissionais com essa visão e a formação certa dominam o mercado de neuro. Me deixa te mostrar o que precisa fazer pra chegar lá:"],
         ],
         "pre_text": None,
-        "audio": "pos_fisio_neuro/04_transicao.opus",
+        "audio": "1011913898678191",
         "audio_duration_seconds": 61,
         "post_text": "Quer que eu te mostre como nossa pós-graduação pode te ajudar a alcançar isso?",
         "trigger": "response",
@@ -150,7 +153,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
             "Que ótimo, [nome]! Essa abertura pra aprender é o que diferencia os profissionais que realmente evoluem. Vou te mostrar tudo 😊",
         ],
         "pre_text": None,
-        "audio": "pos_fisio_neuro/05_visao_geral.opus",
+        "audio": "1508198587559926",
         "audio_duration_seconds": 63,
         "post_text": "Isso faz sentido pro que você está buscando?",
         "trigger": "response",
@@ -172,7 +175,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
             ["Perfeito, [nome]!", "Imagina ver isso aplicado em um paciente pós-AVE na prática. É onde a diferença fica evidente. Ouve 😊"],
         ],
         "pre_text": None,
-        "audio": "pos_fisio_neuro/06_detalhes_parte1.opus",
+        "audio": "1261960869373711",
         "audio_duration_seconds": 59,
         "post_text": (
             "*Módulos da Pós-Graduação:*\n\n"
@@ -236,7 +239,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     {
         "delay_seconds": 5,
         "pre_text": None,
-        "audio": "pos_fisio_neuro/07_detalhes_parte2.opus",
+        "audio": "1507890224019892",
         "audio_duration_seconds": 64,
         "mid_text": (
             "Com essa formação você passa a aceitar casos que hoje recusa, "
@@ -265,7 +268,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
             ["[nome], já tô vendo seu nome nele também! 😍", "Me deixa te mostrar o que é preciso pra tornar isso real:"],
         ],
         "pre_text": None,
-        "audio": "pos_fisio_neuro/08_pitch_valor.opus",
+        "audio": "1235587978692569",
         "audio_duration_seconds": 65,
         "post_text": "Quando você compara a qualidade com o investimento, consegue ver o valor?",
         "trigger": "response",
@@ -274,7 +277,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
     # ── BLOCO 8 — Oferta de Preço + Urgência ─────────────────────────────────
     {
         "delay_seconds": 0,
-        "audio": "pos_fisio_neuro/09_preco_urgencia.opus",
+        "audio": "2075466936567052",
         "audio_duration_seconds": 61,
         "post_text": [
             "Para garantir sua vaga é só acessar o link abaixo 👇\nhttps://link-de-teste.com/pos-fisio-neuro",

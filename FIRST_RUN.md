@@ -36,7 +36,7 @@ Parabéns! Você clonou o projeto. Agora vamos fazer funcionar em 5 minutos.
 
 ### SprintHub (Opcional para teste)
 1. Se tiver conta, obtenha `SPRINTHUB_API_KEY`
-2. Crie 2 pipelines: "curso_1" e "curso_2"
+2. Crie 3 pipelines: `curso_1`, `curso_2` e `pos_fisio_neuro`
 3. Copie os IDs dos pipelines
 
 ---
@@ -79,12 +79,13 @@ SPRINTHUB_API_URL=https://api.sprinthub.com.br
 SPRINTHUB_API_KEY=sua-chave-ou-vazio
 SPRINTHUB_PIPELINE_CURSO_1=id-ou-vazio
 SPRINTHUB_PIPELINE_CURSO_2=id-ou-vazio
+SPRINTHUB_PIPELINE_POS_FISIO_NEURO=id-ou-vazio
 
 # Escalação (seu número WhatsApp)
 ESCALATION_WHATSAPP_NUMBER=5511999999999
 
 # Cursos
-COURSE_SLUGS=curso_1,curso_2
+COURSE_SLUGS=curso_1,curso_2,pos_fisio_neuro
 ```
 
 ---
@@ -182,7 +183,7 @@ Se tiver áudios gravados:
 
 ```bash
 # Organize em:
-mkdir -p audios/curso_1 audios/curso_2
+mkdir -p audios/curso_1 audios/curso_2 audios/pos_fisio_neuro
 # Coloque os .mp3 nas pastas
 
 # Faça upload
@@ -192,6 +193,7 @@ python scripts/upload_audios.py
 Vai retornar media IDs. Copie e cole em:
 - `app/script/schedules/curso_1_script.py`
 - `app/script/schedules/curso_2_script.py`
+- `app/script/schedules/pos_fisio_neuro_script.py`
 
 ---
 

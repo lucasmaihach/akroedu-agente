@@ -206,7 +206,7 @@ Veja `LICENSE` para detalhes completos.
 
 ## 📞 Suporte
 
-- **Documentação:** Veja `README.md` e `INDEX.md`
+- **Documentação:** Veja `README.md` e `docs/INDEX.md`
 - **Perguntas:** Veja `FAQ.md`
 - **Problemas:** Veja `TROUBLESHOOTING.md`
 - **Issues:** Abra no GitHub

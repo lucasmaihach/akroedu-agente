@@ -26,11 +26,17 @@ def _base_payload(to: str) -> dict:
     }
 
 
+def _normalize_phone(phone: str) -> str:
+    """Normaliza telefone para formato esperado pela Meta (apenas dígitos)."""
+    return "".join(ch for ch in phone if ch.isdigit())
+
+
 # ── Envio de mensagens ────────────────────────────────────────────────────────
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def send_text(to: str, text: str) -> dict:
     """Envia uma mensagem de texto simples."""
+    to = _normalize_phone(to)
     payload = {
         **_base_payload(to),
         "type": "text",
@@ -40,6 +46,58 @@ async def send_text(to: str, text: str) -> dict:
         resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
         resp.raise_for_status()
         logger.info("📤 Texto enviado.", to=to, preview=text[:60])
+        return resp.json()
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def send_template(
+    to: str,
+    template_name: str,
+    language_code: str = "pt_BR",
+    body_params: list[str] | None = None,
+) -> dict:
+    """
+    Envia mensagem template (HSM), usada para outbound fora da janela de 24h.
+
+    body_params preenche placeholders do body do template na ordem aprovada pela Meta.
+    """
+    to = _normalize_phone(to)
+
+    components: list[dict] = []
+    if body_params:
+        components.append(
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": param}
+                    for param in body_params
+                ],
+            }
+        )
+
+    template_payload: dict = {
+        "name": template_name,
+        "language": {"code": language_code},
+    }
+    if components:
+        template_payload["components"] = components
+
+    payload = {
+        **_base_payload(to),
+        "type": "template",
+        "template": template_payload,
+    }
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+        resp.raise_for_status()
+        logger.info(
+            "📤 Template enviado.",
+            to=to,
+            template=template_name,
+            language=language_code,
+            params_count=len(body_params or []),
+        )
         return resp.json()
 
 

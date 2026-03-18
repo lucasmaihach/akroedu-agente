@@ -287,7 +287,7 @@ SELECT stage, COUNT(*) FROM leads GROUP BY stage;
 **R:** Checklist:
 
 - [ ] `SPRINTHUB_API_KEY` está correto?
-- [ ] `SPRINTHUB_PIPELINE_CURSO_1` e `CURSO_2` estão corretos?
+- [ ] `SPRINTHUB_PIPELINE_CURSO_1`, `SPRINTHUB_PIPELINE_CURSO_2` e `SPRINTHUB_PIPELINE_POS_FISIO_NEURO` estão corretos?
 - [ ] Os pipelines existem no SprintHub?
 
 Verifique logs:

@@ -116,12 +116,13 @@ SPRINTHUB_API_URL=https://api.sprinthub.com.br
 SPRINTHUB_API_KEY=sua-chave-api-sprinthub
 SPRINTHUB_PIPELINE_CURSO_1=seu-pipeline-id-1
 SPRINTHUB_PIPELINE_CURSO_2=seu-pipeline-id-2
+SPRINTHUB_PIPELINE_POS_FISIO_NEURO=seu-pipeline-id-3
 
 # ── Escalação para Humano ──────────────────────────────────
 ESCALATION_WHATSAPP_NUMBER=5511999999999
 
 # ── Cursos ─────────────────────────────────────────────────
-COURSE_SLUGS=curso_1,curso_2
+COURSE_SLUGS=curso_1,curso_2,pos_fisio_neuro
 ```
 
 **Pressione Ctrl+X → Y → Enter para salvar**

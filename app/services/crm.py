@@ -29,6 +29,7 @@ STAGE_TO_COLUMN: dict[LeadStage, str] = {
 PIPELINE_BY_COURSE = {
     "curso_1": settings.sprinthub_pipeline_curso_1,
     "curso_2": settings.sprinthub_pipeline_curso_2,
+    "pos_fisio_neuro": settings.sprinthub_pipeline_pos_fisio_neuro,
 }
 
 
@@ -39,7 +40,8 @@ async def create_lead(lead: Lead) -> Optional[str]:
     """
     pipeline_id = PIPELINE_BY_COURSE.get(lead.course_slug.value, "")
     if not pipeline_id:
-        logger.warning("Pipeline não configurado para o curso.", course=lead.course_slug)
+        logger.error("Pipeline não configurado para o curso.", course=lead.course_slug)
+        return None
 
     payload = {
         "name": lead.name or lead.phone_number,
@@ -61,7 +63,10 @@ async def create_lead(lead: Lead) -> Optional[str]:
             )
             resp.raise_for_status()
             data = resp.json()
-            sprinthub_id = str(data.get("id", ""))
+            if "id" not in data:
+                logger.error("Resposta do SprintHub sem ID", response=data)
+                return None
+            sprinthub_id = str(data["id"])
             logger.info("✅ Lead criado no SprintHub.", id=sprinthub_id, phone=lead.phone_number)
             return sprinthub_id
     except httpx.HTTPError as e:

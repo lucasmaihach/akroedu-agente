@@ -1,7 +1,10 @@
 import json
 import redis.asyncio as aioredis
 import structlog
-from typing import Optional
+from typing import Optional, AsyncIterator
+
+from datetime import datetime, timezone
+import uuid
 
 from app.config import settings
 from app.models.lead import Lead, LeadStage, CourseSlug
@@ -42,6 +45,11 @@ def _history_key(phone: str) -> str:
 def _script_lock_key(phone: str) -> str:
     """Lock para evitar duplo disparo do script de áudio."""
     return f"script_lock:{phone}"
+
+
+def _followup_lock_key(phone: str) -> str:
+    """Lock para evitar processamento duplicado de follow-up no mesmo lead."""
+    return f"followup_lock:{phone}"
 
 
 # ── Gerenciamento do Lead em cache ────────────────────────────────────────────
@@ -167,3 +175,33 @@ async def is_message_already_processed(message_id: str) -> bool:
     # False se já existia (duplicata).
     result = await r.set(key, "1", nx=True, ex=300)  # TTL: 5 minutos
     return result is None  # None = chave já existia = mensagem duplicada
+
+
+async def iter_leads() -> AsyncIterator[Lead]:
+    """Itera por todos os leads armazenados no Redis."""
+    r = get_redis()
+    async for key in r.scan_iter(match="lead:*"):
+        data = await r.get(key)
+        if not data:
+            continue
+        try:
+            yield Lead(**json.loads(data))
+        except Exception as e:
+            logger.warning("Lead inválido no Redis, ignorando.", key=key, error=str(e))
+
+
+async def acquire_followup_lock(phone: str, ttl_seconds: int = 30) -> Optional[str]:
+    """Adquire lock de follow-up e retorna token único. None se lock já existir."""
+    r = get_redis()
+    token = f"{datetime.now(timezone.utc).timestamp()}:{uuid.uuid4().hex}"
+    ok = await r.set(_followup_lock_key(phone), token, nx=True, ex=ttl_seconds)
+    return token if ok else None
+
+
+async def release_followup_lock(phone: str, token: str) -> None:
+    """Libera lock de follow-up apenas se o token bater."""
+    r = get_redis()
+    key = _followup_lock_key(phone)
+    current = await r.get(key)
+    if current == token:
+        await r.delete(key)

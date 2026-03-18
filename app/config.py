@@ -44,12 +44,13 @@ class Settings(BaseSettings):
     sprinthub_api_key: str
     sprinthub_pipeline_curso_1: str = ""
     sprinthub_pipeline_curso_2: str = ""
+    sprinthub_pipeline_pos_fisio_neuro: str = ""
 
     # ── Escalação ───────────────────────────────────────────
     escalation_whatsapp_number: str
 
     # ── Cursos ──────────────────────────────────────────────
-    course_slugs: str = "curso_1,curso_2"
+    course_slugs: str = "curso_1,curso_2,pos_fisio_neuro"
 
     @property
     def course_slugs_list(self) -> List[str]:

@@ -18,10 +18,7 @@ logger = structlog.get_logger()
 
 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-# Delay simulado de digitação (ms por caractere, com limites)
-TYPING_DELAY_PER_CHAR = 0.03  # 30ms por caractere
-TYPING_MIN_DELAY = 1.0         # mínimo 1 segundo
-TYPING_MAX_DELAY = 4.0         # máximo 4 segundos
+NON_SCRIPT_RESPONSE_DELAY_SECONDS = 60
 
 
 class BaseAgent:
@@ -35,11 +32,12 @@ class BaseAgent:
     course_slug: str = "unknown"
     system_prompt: str = ""
 
-    async def _simulate_typing(self, text: str) -> None:
-        """Aguarda um tempo proporcional ao tamanho da resposta antes de enviar."""
-        delay = len(text) * TYPING_DELAY_PER_CHAR
-        delay = max(TYPING_MIN_DELAY, min(delay, TYPING_MAX_DELAY))
-        await asyncio.sleep(delay)
+    async def _simulate_typing(self, lead: Lead) -> None:
+        """Mostra typing por 60s antes das respostas fora do script."""
+        await whatsapp.send_typing_and_wait(
+            message_id=lead.last_received_msg_id or "",
+            duration_seconds=NON_SCRIPT_RESPONSE_DELAY_SECONDS,
+        )
 
     def _build_system_prompt(self, lead: Lead, knowledge: str, script_active: bool = False) -> str:
         """
@@ -182,6 +180,8 @@ class BaseAgent:
                 system=system,
                 messages=history,
             )
+            if not response.content or not hasattr(response.content[0], 'text'):
+                raise ValueError("Claude retornou formato inesperado")
             reply_text = response.content[0].text.strip()
         except Exception as e:
             logger.error("❌ Erro ao chamar Claude.", error=str(e))
@@ -194,7 +194,7 @@ class BaseAgent:
         await append_message(lead.phone_number, role="assistant", content=reply_text)
 
         # 7. Simula digitação e envia — divide em bolhas separadas por linha
-        await self._simulate_typing(reply_text)
+        await self._simulate_typing(lead)
         bubbles = [line for line in reply_text.split("\n") if line.strip()]
         for i, bubble in enumerate(bubbles):
             await whatsapp.send_text(to=lead.phone_number, text=bubble)

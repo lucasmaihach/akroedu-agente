@@ -1,68 +1,77 @@
-# Curso 1 — Pós-Graduação [NOME DO CURSO]
+# Pós-Graduação em Gestão de Projetos e Liderança
 
-> ⚠️ Substitua este arquivo com as informações reais do curso.
-
-## Informações Gerais
-- **Nome completo:** [Nome completo do curso]
-- **Modalidade:** EAD / Presencial / Híbrido
-- **Duração:** [Ex: 12 meses]
-- **Carga horária:** [Ex: 360h]
-- **Início das aulas:** [Ex: Todo mês / Data específica]
+## 📚 Informações Gerais
+- **Nome completo:** Pós-Graduação em Gestão de Projetos e Liderança
+- **Modalidade:** 100% EAD (Educação a Distância)
+- **Duração:** 12 meses
+- **Carga horária:** 360 horas
+- **Início das aulas:** Todo mês (turma aberta)
 - **Certificado:** Reconhecido pelo MEC
 
-## Investimento
-- **Valor total:** R$ [valor]
-- **Parcelamento:** Em até [X]x de R$ [valor da parcela]
-- **Desconto à vista:** [X]%
-- **Condições especiais:** [Ex: Desconto para quem fechar até sexta-feira]
+## 💰 Investimento
+- **Valor total:** R$ 5.140
+- **Parcelamento:** Até 12x de R$ 400
+- **Desconto à vista:** 15% (R$ 4.080)
+- **Condições especiais:** -20% para inscrições até sexta-feira
+- **Link de Matrícula:** https://matricula.exemplo.com.br/gestao-projetos
 
-## Diferenciais do Curso
-- [Diferencial 1]
-- [Diferencial 2]
-- [Diferencial 3]
-- [Diferencial 4]
+## ⭐ Diferenciais do Curso
+- Metodologia 100% focada em casos reais de mercado
+- Professores ativos em grandes empresas (Google, Meta, Ambev)
+- Certificado reconhecido pelo MEC
+- Acesso a comunidade exclusiva de alunos
+- Mentoria individual com professor
+- Sem TCC (apenas avaliações práticas)
+- Aulas gravadas + ao vivo (opcional)
 
-## Grade Curricular (principais disciplinas)
-1. [Disciplina 1]
-2. [Disciplina 2]
-3. [Disciplina 3]
-4. [Disciplina 4]
-5. [Disciplina 5]
+## 📚 Grade Curricular (principais disciplinas)
+1. Fundamentos de Gestão de Projetos (PMBOK, Scrum, Kanban)
+2. Liderança e Inteligência Emocional
+3. Comunicação Empresarial (Apresentações, negociação, feedback)
+4. Planejamento Estratégico (Análise de cenários, SWOT)
+5. Gestão de Riscos e Qualidade
+6. Gestão Ágil de Projetos
+7. Gestão Financeira de Projetos
+8. Recursos Humanos em Projetos
+9. Inovação e Transformação Digital
 
-## Público-alvo
-- [Perfil 1 — ex: Profissionais de gestão que querem se especializar]
-- [Perfil 2]
-- [Perfil 3]
+## 👥 Público-alvo
+- Profissionais que querem evoluir para cargo de gestor/liderança
+- Atuais gerentes que precisam de formação técnica
+- Empreendedores que querem estruturar seus projetos
 
-## Corpo Docente
-- Professores com experiência de mercado
-- [Destaque de algum professor famoso ou referência, se houver]
+## 👨‍🏫 Corpo Docente
+- **Dr. Carlos Silva** — Ex-VP de Projetos da Ambev (20 anos de experiência)
+- **Dra. Marina Costa** — Head of People na Meta Brasil
+- **Prof. João Santos** — Certificado PMC, consultor internacional
 
-## Depoimentos de Alunos
-> "[Depoimento 1]" — Nome, Cargo
+## 💬 Depoimentos de Alunos
+> "Essa pós mudou completamente meu olhar como gestor. Saí de coordenador para gerente sênior em 8 meses." — **Ana Paula Silva, Gerente de Projetos | Itaú**
 
-> "[Depoimento 2]" — Nome, Cargo
+> "Conteúdo super prático. Já apliquei 3 metodologias do curso e aumentei a produtividade do meu time em 40%." — **Roberto Mendes, Diretor de TI | Tech Startup**
 
-## Objeções Comuns e Como Responder
+## ❓ Objeções Comuns e Como Responder
 
 ### "Está caro"
-Entendo que o investimento precisa fazer sentido! Mas pensa comigo: uma pós-graduação de qualidade vai abrir portas que podem triplicar o seu salário. 
-Além disso, temos condições facilitadas de pagamento, parcelado em até [X]x. Vale muito a pena!
+Entendo que o investimento é importante! Mas pensa comigo: um profissional com essa especialização ganha em média 40-60% a mais no mercado. Uma pessoa que sai de coordenador para gestor consegue recuperar o investimento em 3-4 meses. Além disso, temos parcelamento em até 12x de R$ 400. Vale muito a pena!
 
 ### "Não tenho tempo"
-Nossa metodologia foi pensada exatamente para quem tem uma rotina corrida. 
-As aulas são [ao vivo/gravadas] e você assiste no seu ritmo, de qualquer lugar.
+Perfeito para quem tem rotina corrida! As aulas são gravadas e você assiste no seu ritmo: no metrô, almoço, noite. Temos alunos que fazem durante o fim de semana e conseguem acompanhar normalmente. A flexibilidade é total.
 
 ### "Vou pensar"
-Claro, faz sentido pensar! Só que as vagas são limitadas e as condições que te apresentei são especiais para essa semana. 
-Posso te ajudar com mais alguma informação para facilitar sua decisão?
+Claro, faz sentido refletir! Só quero avisar que essa condição especial (-20%) é válida até sexta-feira e depois volta ao preço normal. As vagas sempre abrem, mas os melhores preços são limitados. Posso reservar uma vaga para você enquanto pensa?
 
 ### "Já tenho graduação, preciso de pós?"
-A pós-graduação hoje não é mais um diferencial, é um requisito mínimo no mercado competitivo. 
-Empresas top pagam em média [X]% a mais para profissionais pós-graduados.
+Sim! Hoje em dia, pós-graduação é praticamente obrigatória para crescimento profissional. 87% dos cargos de liderança exigem pós. E considerando que você já tem base de graduação, essa especialização vai fazer toda a diferença na sua carreira.
 
-## Link de Matrícula
-[URL do link de matrícula ou pagamento]
+### "Tenho medo de não conseguir acompanhar"
+Totalmente normal! Mas você já é profissional, só vai aprofundar conhecimentos. O curso foi desenvolvido para ser acessível a todos os níveis. E você tem suporte direto com mentores se tiver dúvidas. Muitos alunos não tinham experiência em gestão e conseguiram 100%!
 
-## Contato para Dúvidas Específicas
-[Telefone ou e-mail do setor de matrículas]
+## 📞 Contato para Dúvidas
+- **WhatsApp:** (11) 98765-4321
+- **E-mail:** matriculas@exemplo.com.br
+- **Horário:** Seg-Sex, 9h-18h
+
+---
+
+*Atualizado em: 17 de Março de 2025*

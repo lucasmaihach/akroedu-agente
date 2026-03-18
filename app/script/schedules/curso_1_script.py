@@ -17,16 +17,24 @@ Como usar:
 """
 
 CURSO_1_CONFIG: dict = {
-    # Nome legível do curso — substitua quando criar o produto real
-    "name": "[NOME DO CURSO 1]",
+    # Nome legível do curso
+    "name": "Pós-Graduação em Gestão de Projetos e Liderança",
 
     # Palavras-chave que o router usa para identificar interesse nesse curso
-    "keywords": [],  # preencha ao criar o produto real
+    "keywords": [
+        "gestão de projetos", "gestao de projetos", "projetos", "liderança",
+        "lideranca", "mba", "pmbok", "scrum", "kanban", "gestor",
+        "gerente de projetos", "coordenação", "coordenacao", "planejamento estratégico",
+        "planejamento estrategico", "inteligência emocional", "inteligencia emocional",
+    ],
 
     # Passo 2 é o de investimento/preço. IA assume a partir do passo 3.
     "price_reveal_step": 3,
     # Na 2ª insistência no preço, pula direto pro passo do preço.
     "price_skip_to_step": 2,
+
+    # Passo específico onde o bloco de preço é enviado.
+    "price_offer_step": 2,
 }
 
 CURSO_1_SCRIPT: list[dict] = [

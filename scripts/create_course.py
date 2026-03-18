@@ -101,7 +101,7 @@ def create_agent(slug: str, name: str, consultant: str):
     path = ROOT / "app" / "agents" / "courses" / f"{slug}_agent.py"
     if path.exists():
         print(f"  ⚠️  Já existe: {path.relative_to(ROOT)}")
-        return
+        return class_name
 
     content = f'''from app.agents.base_agent import BaseAgent
 from app.knowledge.base import load_knowledge
@@ -141,12 +141,13 @@ Lembre-se: você já enviou áudios de apresentação para esse lead.
 Não repita o que foi dito nos áudios — complemente com informações personalizadas.
 """
 
-    async def get_response(self, lead: Lead, user_message: str) -> str | None:
+    async def get_response(self, lead: Lead, user_message: str, script_active: bool = False) -> str | None:
         knowledge = load_knowledge(self.course_slug)
         return await self.respond(
             lead=lead,
             user_message=user_message,
             knowledge=knowledge,
+            script_active=script_active,
         )
 '''
     path.write_text(content, encoding="utf-8")
@@ -155,7 +156,8 @@ Não repita o que foi dito nos áudios — complemente com informações persona
 
 
 def create_script(slug: str, name: str):
-    var_name = slug.upper() + "_SCRIPT"
+    script_var_name = slug.upper() + "_SCRIPT"
+    config_var_name = slug.upper() + "_CONFIG"
     path = ROOT / "app" / "script" / "schedules" / f"{slug}_script.py"
     if path.exists():
         print(f"  ⚠️  Já existe: {path.relative_to(ROOT)}")
@@ -178,7 +180,20 @@ Como usar:
   3. Copie os media_ids gerados e substitua os valores abaixo.
 """
 
-{var_name}: list[dict] = [
+{config_var_name}: dict = {{
+    # Nome legível do curso
+    "name": "{name}",
+
+    # Palavras-chave que o router usa para identificar interesse nesse curso
+    "keywords": [],  # preencha com termos que o lead costuma usar
+
+    # Passo 2 é o de investimento/preço. IA assume a partir do passo 3.
+    "price_reveal_step": 3,
+    # Na 2ª insistência no preço, pula direto pro passo do preço.
+    "price_skip_to_step": 2,
+}}
+
+{script_var_name}: list[dict] = [
     # ── Passo 0 — Boas-vindas imediatas ──────────────────────────────────────
     {{
         "delay_seconds": 2,
@@ -258,20 +273,38 @@ def print_manual_steps(slug: str, name: str, class_name: str):
 1️⃣  app/models/lead.py  →  dentro do CourseSlug(str, Enum):
     {enum_value} = "{slug}"
 
-2️⃣  app/agents/dispatcher.py  →  no topo (imports):
+2️⃣  app/agents/dispatcher.py
+   no topo (imports):
     from app.agents.courses.{slug}_agent import {class_name}
 
-    →  dentro do AGENT_MAP:
+   dentro do AGENT_MAP:
     CourseSlug.{enum_value}: {class_name}(),
 
-3️⃣  app/agents/router_agent.py  →  dentro de COURSES_DESCRIPTION:
-    - {slug}: {name} — [descreva em uma frase]
+3️⃣  app/script/engine.py
+   no topo (imports):
+    from app.script.schedules.{slug}_script import {enum_value}_SCRIPT, {enum_value}_CONFIG
 
-4️⃣  app/config.py  →  adicione ao .env (e ao env.example):
+   dentro de SCRIPTS:
+    CourseSlug.{enum_value}: {enum_value}_SCRIPT,
+
+   dentro de SCRIPT_CONFIGS:
+    CourseSlug.{enum_value}: {enum_value}_CONFIG,
+
+4️⃣  app/config.py
+   dentro de Settings:
+    sprinthub_pipeline_{slug}: str = ""
+
+   no .env e no env.example:
     SPRINTHUB_PIPELINE_{enum_value}=id-do-pipeline-aqui
+
+   também no .env:
+    COURSE_SLUGS=...,{slug}
 
 5️⃣  app/services/crm.py  →  dentro de PIPELINE_BY_COURSE:
     "{slug}": settings.sprinthub_pipeline_{slug},
+
+6️⃣  (Opcional) audio_media_ids.json:
+    "{slug}": {{}}
 
 {'='*65}
 """)

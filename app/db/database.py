@@ -26,10 +26,14 @@ class Base(DeclarativeBase):
 
 async def init_db():
     """Cria as tabelas no banco de dados na inicialização."""
-    from app.db import orm_models  # noqa: F401 — importa para registrar os modelos
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("✅ Banco de dados inicializado.")
+    try:
+        from app.db import orm_models  # noqa: F401 — importa para registrar os modelos
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("✅ Banco de dados inicializado.")
+    except Exception as e:
+        logger.error("❌ Erro ao inicializar banco de dados.", error=str(e))
+        raise
 
 
 async def get_db() -> AsyncSession:

@@ -3,16 +3,56 @@ import structlog
 from fastapi import APIRouter, Request, HTTPException
 
 from app.config import settings
-from app.models.message import MetaWebhookPayload, IncomingMessage
+from app.models.message import MetaWebhookPayload
 from app.memory.session import get_or_create_lead, is_message_already_processed
 from app.agents.dispatcher import dispatch
 from app.script.engine import run_script_step
 from app.services import whatsapp
 from app.services.transcription import transcribe_audio
+from app.followup.service import stop_followup_on_inbound
 
 logger = structlog.get_logger()
 
 router = APIRouter()
+
+
+def _log_status_updates(value) -> None:
+    """Registra status de entrega das mensagens enviadas pela Meta."""
+    if not value.statuses:
+        return
+
+    for st in value.statuses:
+        status = st.get("status", "unknown")
+        msg_id = st.get("id", "")
+        recipient_id = st.get("recipient_id", "")
+        timestamp = st.get("timestamp", "")
+        errors = st.get("errors") or []
+
+        if status in {"sent", "delivered", "read"}:
+            logger.info(
+                "📬 Status de mensagem WhatsApp.",
+                status=status,
+                msg_id=msg_id,
+                recipient=recipient_id,
+                timestamp=timestamp,
+            )
+        elif status == "failed":
+            logger.error(
+                "❌ Falha na entrega de mensagem WhatsApp.",
+                status=status,
+                msg_id=msg_id,
+                recipient=recipient_id,
+                timestamp=timestamp,
+                errors=errors,
+            )
+        else:
+            logger.info(
+                "ℹ️ Atualização de status WhatsApp.",
+                status=status,
+                msg_id=msg_id,
+                recipient=recipient_id,
+                timestamp=timestamp,
+            )
 
 
 # ── Verificação do webhook (handshake inicial) ──────────────────────────────
@@ -60,13 +100,13 @@ async def _process_webhook(payload: MetaWebhookPayload):
         for change in entry.changes:
             value = change.value
 
-            # Só processa mensagens, ignora status updates (lido, enviado, etc.)
-            if not value.messages:
-                continue
+            # Registra status de entrega (sent/delivered/read/failed)
+            _log_status_updates(value)
 
-            # Processa cada mensagem
-            for msg in value.messages:
-                await _handle_incoming_message(msg, value)
+            # Processa mensagens recebidas do lead (se existirem)
+            if value.messages:
+                for msg in value.messages:
+                    await _handle_incoming_message(msg, value)
 
 
 async def _handle_incoming_message(msg, value) -> None:
@@ -113,6 +153,10 @@ async def _handle_incoming_message(msg, value) -> None:
                         "⚠️ Transcrição falhou — áudio ignorado.",
                         phone=phone_number,
                     )
+                    await whatsapp.send_text(
+                        to=phone_number,
+                        text="Desculpa, não consegui ouvir bem. Pode mandar novamente? 😊"
+                    )
                     return
             except Exception as e:
                 logger.error(
@@ -125,12 +169,22 @@ async def _handle_incoming_message(msg, value) -> None:
         else:
             # Outros tipos (imagem, vídeo, sticker, etc.) — ignora por enquanto
             logger.info("Mensagem ignorada (tipo não suportado).", type=message_type)
+            await whatsapp.send_text(
+                to=phone_number,
+                text="Entendi! Por enquanto só consigo processar mensagens de texto e áudio. Pode escrever ou mandar um áudio? 😊"
+            )
             return
 
         # Obtém ou cria o lead e salva o ID da mensagem recebida (usado para typing indicator)
         from app.memory.session import update_lead_field as _upd
         lead = await get_or_create_lead(phone=phone_number, name=contact_name)
         lead = await _upd(phone_number, last_received_msg_id=msg.id)
+
+        # Qualquer inbound interrompe imediatamente a régua de follow-up.
+        await stop_followup_on_inbound(lead=lead, user_message=text or "")
+
+        # Recarrega lead atualizado antes de seguir o fluxo principal.
+        lead = await get_or_create_lead(phone=phone_number, name=contact_name)
 
         # Dispara o agente para responder
         # (o histórico da mensagem do usuário é salvo dentro de dispatch/agent)

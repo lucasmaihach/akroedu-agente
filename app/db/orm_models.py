@@ -14,6 +14,8 @@ class LeadORM(Base):
     sprinthub_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     script_step: Mapped[int] = mapped_column(Integer, default=0)
     is_escalated: Mapped[bool] = mapped_column(Boolean, default=False)
+    price_ask_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_received_msg_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

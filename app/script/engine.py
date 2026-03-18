@@ -2,7 +2,6 @@ import asyncio
 import structlog
 from typing import Optional
 
-from app.config import settings
 from app.models.lead import Lead, CourseSlug
 from app.memory.session import (
     get_lead,
@@ -16,6 +15,7 @@ from app.services import whatsapp
 from app.script.schedules.curso_1_script import CURSO_1_SCRIPT, CURSO_1_CONFIG
 from app.script.schedules.curso_2_script import CURSO_2_SCRIPT, CURSO_2_CONFIG
 from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT, POS_FISIO_NEURO_CONFIG
+from app.followup.service import arm_followup_waiting_reply, mark_price_sent
 
 logger = structlog.get_logger()
 
@@ -217,9 +217,22 @@ async def run_script_step(phone: str) -> bool:
         if post_text:
             await _send_text_bubbles(phone, post_text, msg_id=msg_id)
 
+        # Marca explicitamente quando o bloco de preço foi enviado.
+        course_config = SCRIPT_CONFIGS.get(lead.course_slug, {})
+        price_offer_step = course_config.get("price_offer_step")
+        if price_offer_step is not None and step_index == price_offer_step:
+            await mark_price_sent(phone)
+
         # Avança o passo do script
         next_step_index = step_index + 1
         await update_lead_field(phone, script_step=next_step_index)
+
+        # Quando acabamos de enviar um passo que aguarda resposta do lead,
+        # armamos/reiniciamos a régua de follow-up automática.
+        if step.get("trigger") == "response":
+            refreshed_lead = await get_lead(phone)
+            if refreshed_lead:
+                await arm_followup_waiting_reply(refreshed_lead)
 
         logger.info(
             "🔊 Passo do script executado.",
@@ -227,6 +240,13 @@ async def run_script_step(phone: str) -> bool:
             step=step_index,
             course=lead.course_slug.value,
         )
+
+        # Caso especial POS Fisio Neuro:
+        # após o bloco de preço, o follow-up passa a ser controlado pela régua dedicada,
+        # não pelos passos automáticos legados do script.
+        if lead.course_slug == CourseSlug.POS_FISIO_NEURO and price_offer_step is not None and step_index >= price_offer_step:
+            await update_lead_field(phone, script_step=len(script))
+            return True
 
         # Se o próximo passo tem trigger="auto", agenda execução automática
         # sem precisar esperar uma mensagem do lead

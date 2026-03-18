@@ -6,53 +6,53 @@ Guia de navegação por toda a documentação do projeto.
 
 ## 🚀 Comece Por Aqui
 
-1. **[QUICKSTART.md](QUICKSTART.md)** ⚡ — 10 minutos para tudo funcionar
-2. **[FIRST_RUN.md](FIRST_RUN.md)** 🎬 — Seu primeiro teste passo a passo
-3. **[README.md](README.md)** 📖 — Documentação completa
+1. **[QUICKSTART.md](../QUICKSTART.md)** ⚡ — 10 minutos para tudo funcionar
+2. **[FIRST_RUN.md](../FIRST_RUN.md)** 🎬 — Seu primeiro teste passo a passo
+3. **[README.md](../README.md)** 📖 — Documentação completa
 
 ---
 
 ## 📋 Guias Principais
 
 ### Setup e Configuração
-- **[QUICKSTART.md](QUICKSTART.md)** — Comece aqui (10 min)
-- **[FIRST_RUN.md](FIRST_RUN.md)** — Teste local com passo a passo
+- **[QUICKSTART.md](../QUICKSTART.md)** — Comece aqui (10 min)
+- **[FIRST_RUN.md](../FIRST_RUN.md)** — Teste local com passo a passo
 - **[env.example](env.example)** — Modelo de variáveis de ambiente
 
 ### Customização e Treinamento
-- **[AGENT_TRAINING.md](AGENT_TRAINING.md)** — Treinar agentes para parecerem humanos
-- **[SETUP_AUDIOS.md](SETUP_AUDIOS.md)** — Gravar, fazer upload e configurar áudios
-- **[STRUCTURE.md](STRUCTURE.md)** — Estrutura completa do projeto
+- **[AGENT_TRAINING.md](../AGENT_TRAINING.md)** — Treinar agentes para parecerem humanos
+- **[SETUP_AUDIOS.md](../SETUP_AUDIOS.md)** — Gravar, fazer upload e configurar áudios
+- **[STRUCTURE.md](../STRUCTURE.md)** — Estrutura completa do projeto
 
 ### Deployment
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** — Deploy na Hostinger VPS
-- **[PREPRODUCTION_CHECKLIST.md](PREPRODUCTION_CHECKLIST.md)** — Checklist antes de ir ao vivo
+- **[DEPLOYMENT.md](../DEPLOYMENT.md)** — Deploy na Hostinger VPS
+- **[PREPRODUCTION_CHECKLIST.md](../PREPRODUCTION_CHECKLIST.md)** — Checklist antes de ir ao vivo
 
 ### Referência
-- **[FAQ.md](FAQ.md)** — Perguntas frequentes e troubleshooting
-- **[README.md](README.md)** — Documentação técnica completa
+- **[FAQ.md](../FAQ.md)** — Perguntas frequentes e troubleshooting
+- **[README.md](../README.md)** — Documentação técnica completa
 
 ---
 
 ## 🎯 Por Objetivo
 
 ### "Quero testar agora"
-→ [QUICKSTART.md](QUICKSTART.md) → [FIRST_RUN.md](FIRST_RUN.md)
+→ [QUICKSTART.md](../QUICKSTART.md) → [FIRST_RUN.md](../FIRST_RUN.md)
 
 ### "Quero personalizar os agentes"
-→ [AGENT_TRAINING.md](AGENT_TRAINING.md) → edite `app/agents/courses/`
+→ [AGENT_TRAINING.md](../AGENT_TRAINING.md) → edite `app/agents/courses/`
 
 ### "Quero configurar áudios"
-→ [SETUP_AUDIOS.md](SETUP_AUDIOS.md) → `python scripts/upload_audios.py`
+→ [SETUP_AUDIOS.md](../SETUP_AUDIOS.md) → `python scripts/upload_audios.py`
 
 ### "Quero fazer deploy"
-→ [DEPLOYMENT.md](DEPLOYMENT.md) → [PREPRODUCTION_CHECKLIST.md](PREPRODUCTION_CHECKLIST.md)
+→ [DEPLOYMENT.md](../DEPLOYMENT.md) → [PREPRODUCTION_CHECKLIST.md](../PREPRODUCTION_CHECKLIST.md)
 
 ### "Estou com erro"
-→ [FAQ.md](FAQ.md) → procure sua dúvida
+→ [FAQ.md](../FAQ.md) → procure sua dúvida
 
 ### "Quero entender a estrutura"
-→ [STRUCTURE.md](STRUCTURE.md) → [README.md](README.md)
+→ [STRUCTURE.md](../STRUCTURE.md) → [README.md](../README.md)
 
 ---
 
@@ -118,15 +118,15 @@ INDEX.md                        # Este arquivo
    ↓
 3. Siga FIRST_RUN.md (teste local)
    ↓
-4. Edite os agentes (AGENT_TRAINING.md)
+4. Edite os agentes (../AGENT_TRAINING.md)
    ↓
 5. Configure os cursos (knowledge base .md)
    ↓
-6. Configure os áudios (SETUP_AUDIOS.md)
+6. Configure os áudios (../SETUP_AUDIOS.md)
    ↓
-7. Faça o checklist (PREPRODUCTION_CHECKLIST.md)
+7. Faça o checklist (../PREPRODUCTION_CHECKLIST.md)
    ↓
-8. Deploy (DEPLOYMENT.md)
+8. Deploy (../DEPLOYMENT.md)
    ↓
 9. Configure webhook (README.md seção "Webhook")
    ↓
@@ -140,11 +140,11 @@ INDEX.md                        # Este arquivo
 | Problema | Solução |
 |----------|---------|
 | API não inicia | Verifique `.env` e veja `docker-compose logs api` |
-| Webhook não funciona | Veja [FAQ.md](FAQ.md) seção "Webhook" |
-| Agente não responde | Verifique `ANTHROPIC_API_KEY` em [FAQ.md](FAQ.md) |
-| Áudios não enviam | Veja [SETUP_AUDIOS.md](SETUP_AUDIOS.md) troubleshooting |
-| Deploy falha | Siga [DEPLOYMENT.md](DEPLOYMENT.md) passo a passo |
-| Outro erro | Procure em [FAQ.md](FAQ.md) ou abra uma issue |
+| Webhook não funciona | Veja [FAQ.md](../FAQ.md) seção "Webhook" |
+| Agente não responde | Verifique `ANTHROPIC_API_KEY` em [FAQ.md](../FAQ.md) |
+| Áudios não enviam | Veja [SETUP_AUDIOS.md](../SETUP_AUDIOS.md) troubleshooting |
+| Deploy falha | Siga [DEPLOYMENT.md](../DEPLOYMENT.md) passo a passo |
+| Outro erro | Procure em [FAQ.md](../FAQ.md) ou abra uma issue |
 
 ---
 
@@ -222,7 +222,7 @@ Veja `Makefile` para mais comandos.
 ## 📞 Suporte
 
 ### Se tiver dúvida
-1. Procure em [FAQ.md](FAQ.md)
+1. Procure em [FAQ.md](../FAQ.md)
 2. Verifique os logs: `docker-compose logs -f api`
 3. Leia o README.md seção relevante
 4. Abra uma issue no GitHub

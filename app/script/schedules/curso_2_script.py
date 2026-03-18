@@ -12,15 +12,23 @@ Cada passo do script é um dicionário com:
 
 CURSO_2_CONFIG: dict = {
     # Nome legível do curso — substitua quando criar o produto real
-    "name": "[NOME DO CURSO 2]",
+    "name": "Pós-Graduação em Marketing Digital e E-commerce",
 
     # Palavras-chave que o router usa para identificar interesse nesse curso
-    "keywords": [],  # preencha ao criar o produto real
+    "keywords": [
+        "marketing", "digital", "e-commerce", "ecommerce",
+        "seo", "sem", "facebook", "instagram", "google ads",
+        "vendas online", "loja virtual", "shopify", "publicidade",
+        "influencer", "inbound", "email", "social media",
+    ],
 
     # Passo 3 é o de investimento/preço. IA assume a partir do passo 4.
     "price_reveal_step": 4,
     # Na 2ª insistência no preço, pula direto pro passo do preço.
     "price_skip_to_step": 3,
+
+    # Passo específico onde o bloco de preço é enviado.
+    "price_offer_step": 3,
 }
 
 CURSO_2_SCRIPT: list[dict] = [

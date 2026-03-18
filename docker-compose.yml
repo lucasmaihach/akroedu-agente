@@ -8,6 +8,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      ESCALATION_WHATSAPP_NUMBER: "5511913140331"
     depends_on:
       - redis
       - postgres

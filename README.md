@@ -80,12 +80,13 @@ REDIS_URL=redis://redis:6379/0
 SPRINTHUB_API_KEY=sua-chave
 SPRINTHUB_PIPELINE_CURSO_1=pipeline-id-1
 SPRINTHUB_PIPELINE_CURSO_2=pipeline-id-2
+SPRINTHUB_PIPELINE_POS_FISIO_NEURO=pipeline-id-3
 
 # Escalação
 ESCALATION_WHATSAPP_NUMBER=5511999999999
 
 # Cursos
-COURSE_SLUGS=curso_1,curso_2
+COURSE_SLUGS=curso_1,curso_2,pos_fisio_neuro
 ```
 
 ### 3️⃣ Suba os containers
@@ -167,6 +168,7 @@ Obtenha os IDs dos pipelines no SprintHub e adicione ao `.env`:
 ```
 SPRINTHUB_PIPELINE_CURSO_1=12345
 SPRINTHUB_PIPELINE_CURSO_2=67890
+SPRINTHUB_PIPELINE_POS_FISIO_NEURO=24680
 ```
 
 ---
@@ -378,7 +380,7 @@ Quando um lead pede para falar com alguém:
 ### Leads não aparecem no SprintHub
 
 ✅ Verifique `SPRINTHUB_API_KEY`
-✅ Confirme que `SPRINTHUB_PIPELINE_CURSO_1` e `CURSO_2` estão corretos
+✅ Confirme que `SPRINTHUB_PIPELINE_CURSO_1`, `SPRINTHUB_PIPELINE_CURSO_2` e `SPRINTHUB_PIPELINE_POS_FISIO_NEURO` estão corretos
 ✅ Cheque se a API do SprintHub está online
 
 ---
@@ -494,7 +496,7 @@ certbot --nginx -d seu-dominio.com
 
 ## 📝 Próximos Passos
 
-1. ✅ Configure seus 2 cursos
+1. ✅ Configure seus cursos (curso_1, curso_2 e pos_fisio_neuro)
 2. ✅ Crie os arquivos de áudio (.mp3/.ogg)
 3. ✅ Atualize as knowledge bases (.md)
 4. ✅ Configure as APIs (Meta, SprintHub, Anthropic)

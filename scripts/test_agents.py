@@ -10,7 +10,7 @@ Uso:
 
 import asyncio
 from app.config import settings
-from app.models.lead import Lead, CourseSlug, LeadStage
+from app.models.lead import CourseSlug, LeadStage
 from app.memory.session import init_redis, get_or_create_lead, append_message, save_lead
 from app.agents.courses.curso_1_agent import Curso1Agent
 from app.agents.courses.curso_2_agent import Curso2Agent
@@ -23,14 +23,16 @@ async def test_agent(agent, course_name: str):
     print(f"🧪 Testando Agente: {course_name}")
     print(f"{'='*70}\n")
 
-    # Cria um lead de teste
+    # Cria um lead de teste no Redis (necessário para update de estágio)
     phone = f"551100000000{hash(course_name) % 1000:03d}"
-    lead = Lead(
-        phone_number=phone,
-        name="Cliente Teste",
-        course_slug=agent.course_slug,
-        stage=LeadStage.NURTURING,
+    lead = await get_or_create_lead(phone=phone, name="Cliente Teste")
+    lead = lead.model_copy(
+        update={
+            "course_slug": CourseSlug(agent.course_slug),
+            "stage": LeadStage.NURTURING,
+        }
     )
+    await save_lead(lead)
 
     # Simula uma conversa
     test_messages = [

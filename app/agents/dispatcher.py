@@ -5,10 +5,13 @@ from app.agents.router_agent import identify_course
 from app.agents.courses.curso_1_agent import Curso1Agent
 from app.agents.courses.curso_2_agent import Curso2Agent
 from app.agents.courses.pos_fisio_neuro_agent import PosFisioNeuroAgent
-from app.memory.session import update_lead_field, save_lead
-from app.services import whatsapp
+from app.memory.session import update_lead_field
+from app.services import whatsapp, escalation
+from app.agents.courses.pos_fisio_neuro_faq import match_faq_response
 
 logger = structlog.get_logger()
+
+NON_SCRIPT_RESPONSE_DELAY_SECONDS = 60
 
 # Palavras que indicam que o lead está perguntando sobre preço
 _PRICE_KEYWORDS = [
@@ -20,6 +23,33 @@ _PRICE_KEYWORDS = [
 def _is_asking_price(text: str) -> bool:
     lower = text.lower()
     return any(w in lower for w in _PRICE_KEYWORDS)
+
+
+def _looks_like_question(text: str) -> bool:
+    lower = text.lower().strip()
+    if "?" in lower:
+        return True
+
+    # Evita falso-positivo por substring (ex.: "certo" não deve casar com "é").
+    tokens = [t for t in lower.replace("?", " ").split() if t]
+    if not tokens:
+        return False
+
+    question_starters = {"como", "quando", "quanto", "qual", "quais", "onde", "porque", "por", "tem", "funciona", "posso", "pode", "precisa"}
+    if tokens[0] in question_starters:
+        return True
+
+    strong_terms = {"cancelamento", "cancelar", "reembolso", "multa", "mensalidade", "preco", "preço", "valor"}
+    return any(t in strong_terms for t in tokens)
+
+
+async def _send_delayed_reply(lead: Lead, text: str) -> None:
+    """Simula atendimento humano: typing por 60s antes de responder."""
+    await whatsapp.send_typing_and_wait(
+        message_id=lead.last_received_msg_id or "",
+        duration_seconds=NON_SCRIPT_RESPONSE_DELAY_SECONDS,
+    )
+    await whatsapp.send_text(to=lead.phone_number, text=text)
 
 # Mapa de curso → agente instanciado
 AGENT_MAP = {
@@ -162,6 +192,52 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                     new_step=price_skip_to_step,
                 )
                 return True  # avança (agora está no bloco configurado)
+
+        # FAQ controlado para POS Fisio Neuro durante script ativo (antes do preço).
+        # Se bater em intenção conhecida, responde com texto aprovado.
+        if course == CourseSlug.POS_FISIO_NEURO:
+            faq_response, notify_human = match_faq_response(user_message)
+            if faq_response:
+                await _send_delayed_reply(lead, faq_response)
+                if notify_human:
+                    await escalation.notify_human_only(
+                        lead=lead,
+                        reason="Pergunta sensível de FAQ (cancelamento/reembolso)",
+                        user_message=user_message,
+                    )
+                logger.info(
+                    "FAQ respondido durante script ativo.",
+                    phone=lead.phone_number,
+                    step=lead.script_step,
+                    notify_human=notify_human,
+                )
+                return True
+
+            # Só trata como FAQ não mapeado se realmente parecer pergunta.
+            # Evita fallback sem sentido em respostas normais do lead (ex.: "sou formado há 5 anos").
+            if _looks_like_question(user_message):
+                await _send_delayed_reply(
+                    lead,
+                    "Boa pergunta! Eu vou verificar certinho pra te responder com precisão e já te respondo 😊",
+                )
+                await escalation.notify_human_only(
+                    lead=lead,
+                    reason="Pergunta fora do FAQ durante script ativo",
+                    user_message=user_message,
+                )
+                logger.info(
+                    "Pergunta fora do FAQ durante script ativo — humano notificado e script continua.",
+                    phone=lead.phone_number,
+                    step=lead.script_step,
+                )
+                return True
+
+            logger.info(
+                "Mensagem normal durante script ativo (sem FAQ) — avançando script.",
+                phone=lead.phone_number,
+                step=lead.script_step,
+            )
+            return True
 
         logger.info(
             "Script ativo: AI silenciada, avançando script.",

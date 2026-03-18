@@ -76,7 +76,7 @@ async def identify_course(lead: Lead, user_message: str) -> CourseSlug:
             system=_build_router_prompt(),
             messages=messages_for_router,
         )
-        raw = response.content[0].text.strip().lower()
+        raw = response.content[0].text.strip().lower().replace(" ", "_")
 
         if raw in [c.value for c in CourseSlug]:
             course = CourseSlug(raw)

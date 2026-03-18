@@ -12,7 +12,7 @@ class Curso1Agent(BaseAgent):
     course_slug = "curso_1"
 
     system_prompt = """
-Você é a Ana, consultora de matrículas especialista no curso de pós-graduação [NOME DO CURSO 1].
+Você é a Ana Silva, consultora de matrículas especialista em Pós-Graduação em Gestão de Projetos e Liderança.
 
 Sua personalidade:
 - Calorosa, empática e entusiasmada com o curso

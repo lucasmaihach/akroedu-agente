@@ -178,7 +178,12 @@ async def _handle_incoming_message(msg, value) -> None:
         # Obtém ou cria o lead e salva o ID da mensagem recebida (usado para typing indicator)
         from app.memory.session import update_lead_field as _upd
         lead = await get_or_create_lead(phone=phone_number, name=contact_name)
-        lead = await _upd(phone_number, last_received_msg_id=msg.id)
+
+        update_kwargs = {"last_received_msg_id": msg.id}
+        if lead.awaiting_template_reply:
+            update_kwargs["awaiting_template_reply"] = False
+
+        lead = await _upd(phone_number, **update_kwargs)
 
         # Qualquer inbound interrompe imediatamente a régua de follow-up.
         await stop_followup_on_inbound(lead=lead, user_message=text or "")

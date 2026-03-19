@@ -10,10 +10,13 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from app.config import settings
 from app.memory.session import get_or_create_lead, update_lead_field
 from app.models.lead import CourseSlug, LeadStage
-from app.script.engine import SCRIPT_CONFIGS, run_script_step
+from app.script.engine import SCRIPT_CONFIGS
+from app.services import whatsapp
 
 logger = structlog.get_logger()
 router = APIRouter()
+
+WELCOME_TEMPLATE_NAME = "boas_vindas_fisio"
 
 def _normalize_phone(phone: str) -> str:
     return "".join(ch for ch in (phone or "") if ch.isdigit())
@@ -262,6 +265,36 @@ async def receive_sprinthub_webhook(
             "script_step": lead.script_step,
         }
 
+    # Se já enviamos template inicial e ainda não houve resposta do lead,
+    # evita reenviar template em duplicidade a cada novo webhook do CRM.
+    if lead.course_slug == course and lead.awaiting_template_reply:
+        return {
+            "status": "ignored",
+            "reason": "waiting_user_reply",
+            "phone": phone,
+            "course": course.value,
+        }
+
+    try:
+        await whatsapp.send_template(
+            to=phone,
+            template_name=WELCOME_TEMPLATE_NAME,
+            language_code="pt_BR",
+        )
+    except Exception as e:
+        logger.error(
+            "❌ Falha ao enviar template inicial do CRM.",
+            phone=phone,
+            template=WELCOME_TEMPLATE_NAME,
+            error=str(e),
+        )
+        return {
+            "status": "error",
+            "reason": "template_send_failed",
+            "phone": phone,
+            "template": WELCOME_TEMPLATE_NAME,
+        }
+
     lead = await update_lead_field(
         phone,
         name=name or lead.name,
@@ -270,6 +303,7 @@ async def receive_sprinthub_webhook(
         notes=_merge_notes_with_crm(lead.notes, crm_snapshot),
         stage=LeadStage.NURTURING,
         script_step=0,
+        awaiting_template_reply=True,
         is_escalated=False,
         price_ask_count=0,
         followup_status="idle",
@@ -282,11 +316,10 @@ async def receive_sprinthub_webhook(
         price_sent_at=None,
     )
 
-    asyncio.create_task(run_script_step(phone))
-
     logger.info(
-        "✅ Agente ativado por webhook do CRM.",
+        "✅ Template inicial enviado por webhook do CRM; aguardando resposta do lead.",
         phone=phone,
+        template=WELCOME_TEMPLATE_NAME,
         product_name=product_name,
         course=lead.course_slug.value,
         sprinthub_lead_id=sprinthub_lead_id,
@@ -295,10 +328,11 @@ async def receive_sprinthub_webhook(
     )
 
     return {
-        "status": "started",
+        "status": "template_sent_waiting_reply",
         "phone": phone,
         "course": lead.course_slug.value,
         "stage": lead.stage.value,
+        "template": WELCOME_TEMPLATE_NAME,
         "product_name": product_name,
         "sprinthub_lead_id": sprinthub_lead_id,
         "sprinthub_opportunity_id": sprinthub_opportunity_id,

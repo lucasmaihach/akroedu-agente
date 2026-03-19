@@ -52,3 +52,6 @@ class Lead(BaseModel):
     # Controle de janela/fluxo
     last_inbound_at: Optional[datetime] = None  # última mensagem recebida do lead
     price_sent_at: Optional[datetime] = None  # quando o bloco de preço foi enviado
+
+    # Ativação outbound via CRM/template
+    awaiting_template_reply: bool = False  # True quando template inicial foi enviado e aguardamos 1º inbound

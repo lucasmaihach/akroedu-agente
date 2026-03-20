@@ -1,4 +1,3 @@
-import asyncio
 import json
 import re
 import unicodedata
@@ -256,23 +255,23 @@ async def receive_sprinthub_webhook(
 
     lead = await get_or_create_lead(phone=phone, name=name)
 
-    # Evita disparo duplicado se o script já iniciou para esse mesmo curso.
-    if lead.course_slug == course and lead.stage == LeadStage.NURTURING and lead.script_step > 0:
+    # Idempotência forte para evitar reset do fluxo quando o CRM reenviar
+    # o mesmo lead (ou atualizações do mesmo lead) em sequência.
+    if lead.course_slug == course and lead.stage == LeadStage.NURTURING:
+        if lead.awaiting_template_reply:
+            return {
+                "status": "ignored",
+                "reason": "waiting_user_reply",
+                "phone": phone,
+                "course": course.value,
+            }
+
         return {
             "status": "ignored",
             "reason": "already_running",
             "phone": phone,
             "script_step": lead.script_step,
-        }
-
-    # Se já enviamos template inicial e ainda não houve resposta do lead,
-    # evita reenviar template em duplicidade a cada novo webhook do CRM.
-    if lead.course_slug == course and lead.awaiting_template_reply:
-        return {
-            "status": "ignored",
-            "reason": "waiting_user_reply",
-            "phone": phone,
-            "course": course.value,
+            "awaiting_template_reply": lead.awaiting_template_reply,
         }
 
     try:

@@ -17,6 +17,18 @@ router = APIRouter()
 
 WELCOME_TEMPLATE_NAME = "boas_vindas_fisio"
 
+
+def _unwrap_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    Alguns CRMs encaminham o conteúdo útil dentro de "data"/"payload"/"body".
+    Mantém compatibilidade com ambos formatos: plano e aninhado.
+    """
+    for key in ("data", "payload", "body"):
+        nested = payload.get(key)
+        if isinstance(nested, dict) and nested:
+            return nested
+    return payload
+
 def _normalize_phone(phone: str) -> str:
     return "".join(ch for ch in (phone or "") if ch.isdigit())
 
@@ -232,16 +244,33 @@ async def receive_sprinthub_webhook(
     - Não depende de tags/segmentos.
     """
     _authorize(x_webhook_key)
-    payload = await request.json()
+    raw_payload = await request.json()
+    payload = _unwrap_payload(raw_payload)
+
+    logger.info(
+        "📥 Webhook SprintHub recebido.",
+        top_level_keys=list(raw_payload.keys()) if isinstance(raw_payload, dict) else [],
+        payload_keys=list(payload.keys()) if isinstance(payload, dict) else [],
+    )
 
     phone = _extract_phone(payload)
     if not phone:
+        logger.warning(
+            "⚠️ SprintHub ignorado: telefone ausente.",
+            payload_preview=str(payload)[:800],
+        )
         return {"status": "ignored", "reason": "missing_phone"}
 
     product_name = _extract_product_name(payload)
     course = _extract_course(payload, product_name)
 
     if course == CourseSlug.UNKNOWN:
+        logger.warning(
+            "⚠️ SprintHub ignorado: curso não mapeado.",
+            phone=phone,
+            product_name=product_name,
+            payload_preview=str(payload)[:800],
+        )
         return {
             "status": "ignored",
             "reason": "activation_not_matched",
@@ -259,6 +288,11 @@ async def receive_sprinthub_webhook(
     # o mesmo lead (ou atualizações do mesmo lead) em sequência.
     if lead.course_slug == course and lead.stage == LeadStage.NURTURING:
         if lead.awaiting_template_reply:
+            logger.info(
+                "ℹ️ SprintHub ignorado: já aguardando resposta do lead.",
+                phone=phone,
+                course=course.value,
+            )
             return {
                 "status": "ignored",
                 "reason": "waiting_user_reply",
@@ -266,6 +300,12 @@ async def receive_sprinthub_webhook(
                 "course": course.value,
             }
 
+        logger.info(
+            "ℹ️ SprintHub ignorado: fluxo já em execução.",
+            phone=phone,
+            course=course.value,
+            script_step=lead.script_step,
+        )
         return {
             "status": "ignored",
             "reason": "already_running",

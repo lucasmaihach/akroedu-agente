@@ -71,7 +71,22 @@ SCRIPT_CONFIGS = {
 }
 
 
-async def run_script_step(phone: str) -> bool:
+async def _retry_script_step_after_lock(phone: str, attempts: int = 6, interval_seconds: float = 3.0) -> None:
+    """
+    Quando um inbound chega enquanto outro passo ainda está em execução,
+    re-tenta avançar o script por alguns ciclos para não perder o gatilho.
+    """
+    for attempt in range(1, attempts + 1):
+        await asyncio.sleep(interval_seconds)
+        sent = await run_script_step(phone, retry_on_lock=False)
+        if sent:
+            logger.info("🔁 Re-tentativa após lock executou passo com sucesso.", phone=phone, attempt=attempt)
+            return
+
+    logger.info("ℹ️ Re-tentativas após lock encerradas sem novo envio.", phone=phone)
+
+
+async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
     """
     Executa o próximo passo do script de áudios para o lead.
     Retorna True se enviou alguma coisa, False se o script terminou ou está em lock.
@@ -101,6 +116,8 @@ async def run_script_step(phone: str) -> bool:
     locked = await set_script_lock(phone, ttl_seconds=120)
     if not locked:
         logger.info("Script lock ativo, pulando.", phone=phone)
+        if retry_on_lock:
+            asyncio.create_task(_retry_script_step_after_lock(phone))
         return False
 
     step = script[step_index]

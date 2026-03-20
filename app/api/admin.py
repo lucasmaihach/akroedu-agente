@@ -96,7 +96,12 @@ async def admin_monitor_page(
   let selectedPhone = null;
 
   function esc(text) {{
-    return (text || "").replace(/[&<>\"]/g, (c) => ({{"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}}[c]));
+    return (text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }}
 
   async function loadLeads() {{

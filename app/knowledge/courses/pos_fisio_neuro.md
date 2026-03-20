@@ -14,7 +14,7 @@
 - **Bolsa 1 — Programa de indicação** (indica 5 colegas da área, não precisam se matricular): 12x de R$ 559 + taxa de matrícula de R$ 350
 - **Bolsa 2 — Válida apenas hoje** (indica 5 amigos + decide agora): 20x de R$ 257 + taxa de matrícula de R$ 197
 - **Forma de início:** Pagamento da taxa de matrícula agora → vaga reservada → primeira mensalidade no próximo mês
-- **Link de matrícula:** https://link-de-teste.com/pos-fisio-neuro *(substituir pelo link real)*
+- **Link da taxa de matrícula (R$ 197):** https://www.asaas.com/c/p2hqatm2cr2qkfsq
 
 ### Como apresentar o preço
 1. Sempre apresente o valor integral (R$ 9.500 / 14x R$ 794) como âncora PRIMEIRO
@@ -139,7 +139,7 @@ A pós é EAD com aulas gravadas. Você estuda no seu ritmo, no horário que pre
 Hoje a pós não é diferencial, é requisito mínimo. E especialização em neuro especificamente te coloca em outro patamar: você aceita casos que os generalistas recusam, cobra mais e fideliza pacientes por mais tempo.
 
 ## Informações de Contato e Matrícula
-- **Link de matrícula:** https://link-de-teste.com/pos-fisio-neuro *(substituir pelo link real)*
+- **Link da taxa de matrícula (R$ 197):** https://www.asaas.com/c/p2hqatm2cr2qkfsq
 - **Contato do setor de matrículas:** [PREENCHER]
 
 ---

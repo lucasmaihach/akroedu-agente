@@ -11,6 +11,7 @@ from app.memory.session import get_or_create_lead, update_lead_field
 from app.models.lead import CourseSlug, LeadStage
 from app.script.engine import SCRIPT_CONFIGS
 from app.services import whatsapp
+from app.utils.business_hours import now_utc, fit_business_hours, is_within_business_hours
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -300,6 +301,21 @@ async def receive_sprinthub_webhook(
                 "course": course.value,
             }
 
+        if lead.pending_welcome_template:
+            logger.info(
+                "ℹ️ SprintHub ignorado: template inicial já está agendado para horário comercial.",
+                phone=phone,
+                course=course.value,
+                welcome_next_at=str(lead.welcome_next_at),
+            )
+            return {
+                "status": "ignored",
+                "reason": "welcome_already_scheduled",
+                "phone": phone,
+                "course": course.value,
+                "welcome_next_at": str(lead.welcome_next_at) if lead.welcome_next_at else None,
+            }
+
         logger.info(
             "ℹ️ SprintHub ignorado: fluxo já em execução.",
             phone=phone,
@@ -312,6 +328,56 @@ async def receive_sprinthub_webhook(
             "phone": phone,
             "script_step": lead.script_step,
             "awaiting_template_reply": lead.awaiting_template_reply,
+        }
+
+    common_updates = dict(
+        name=name or lead.name,
+        course_slug=course,
+        sprinthub_id=sprinthub_lead_id or lead.sprinthub_id,
+        notes=_merge_notes_with_crm(lead.notes, crm_snapshot),
+        stage=LeadStage.NURTURING,
+        script_step=0,
+        is_escalated=False,
+        price_ask_count=0,
+        followup_status="idle",
+        followup_step=0,
+        followup_next_at=None,
+        followup_anchor_at=None,
+        followup_started_at=None,
+        followup_finished_at=None,
+        followup_stopped_reason=None,
+        price_sent_at=None,
+    )
+
+    if not is_within_business_hours(now_utc()):
+        welcome_next_at = fit_business_hours(now_utc())
+        lead = await update_lead_field(
+            phone,
+            awaiting_template_reply=False,
+            pending_welcome_template=True,
+            welcome_template_name=WELCOME_TEMPLATE_NAME,
+            welcome_next_at=welcome_next_at,
+            **common_updates,
+        )
+        logger.info(
+            "🕒 Lead recebido fora do horário; template inicial agendado.",
+            phone=phone,
+            template=WELCOME_TEMPLATE_NAME,
+            welcome_next_at=str(welcome_next_at),
+            course=lead.course_slug.value,
+        )
+        return {
+            "status": "scheduled",
+            "reason": "outside_business_hours",
+            "phone": phone,
+            "course": lead.course_slug.value,
+            "stage": lead.stage.value,
+            "template": WELCOME_TEMPLATE_NAME,
+            "welcome_next_at": str(welcome_next_at),
+            "product_name": product_name,
+            "sprinthub_lead_id": sprinthub_lead_id,
+            "sprinthub_opportunity_id": sprinthub_opportunity_id,
+            "crm_snapshot": crm_snapshot,
         }
 
     try:
@@ -336,23 +402,11 @@ async def receive_sprinthub_webhook(
 
     lead = await update_lead_field(
         phone,
-        name=name or lead.name,
-        course_slug=course,
-        sprinthub_id=sprinthub_lead_id or lead.sprinthub_id,
-        notes=_merge_notes_with_crm(lead.notes, crm_snapshot),
-        stage=LeadStage.NURTURING,
-        script_step=0,
         awaiting_template_reply=True,
-        is_escalated=False,
-        price_ask_count=0,
-        followup_status="idle",
-        followup_step=0,
-        followup_next_at=None,
-        followup_anchor_at=None,
-        followup_started_at=None,
-        followup_finished_at=None,
-        followup_stopped_reason=None,
-        price_sent_at=None,
+        pending_welcome_template=False,
+        welcome_template_name=None,
+        welcome_next_at=None,
+        **common_updates,
     )
 
     logger.info(

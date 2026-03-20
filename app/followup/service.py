@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 
 import structlog
 
@@ -15,12 +14,11 @@ from app.memory.session import (
 )
 from app.models.lead import Lead, CourseSlug
 from app.services import whatsapp, escalation
+from app.api.crm_webhooks import WELCOME_TEMPLATE_NAME
+from app.utils.business_hours import now_utc, fit_business_hours
 
 logger = structlog.get_logger()
 
-BRT = ZoneInfo("America/Sao_Paulo")
-START_HOUR = 7
-END_HOUR = 22
 WINDOW_HOURS = 24
 
 
@@ -59,28 +57,14 @@ C2_TEMPLATE_NAMES = [
 ]
 
 
-def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _first_name(lead: Lead) -> str | None:
     if not lead.name:
         return None
     return lead.name.strip().split()[0]
 
 
-def _fit_business_hours(dt_utc: datetime) -> datetime:
-    dt_brt = dt_utc.astimezone(BRT)
-    if dt_brt.hour < START_HOUR:
-        dt_brt = dt_brt.replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
-    elif dt_brt.hour >= END_HOUR:
-        next_day = dt_brt + timedelta(days=1)
-        dt_brt = next_day.replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
-    return dt_brt.astimezone(timezone.utc)
-
-
 def _window_end(lead: Lead) -> datetime:
-    base = lead.last_inbound_at or lead.followup_anchor_at or _now_utc()
+    base = lead.last_inbound_at or lead.followup_anchor_at or now_utc()
     return base + timedelta(hours=WINDOW_HOURS)
 
 
@@ -89,7 +73,7 @@ def _scenario_for_lead(lead: Lead) -> str:
 
 
 def _step_due_at(lead: Lead, scenario: str, step: int) -> datetime:
-    anchor = lead.followup_anchor_at or _now_utc()
+    anchor = lead.followup_anchor_at or now_utc()
 
     if scenario == "C1":
         # F1..F5 em: 2h, 3h, 6h, 12h, 20h
@@ -143,7 +127,7 @@ def _template_name(scenario: str, step: int) -> str:
 
 async def stop_followup_on_inbound(lead: Lead, user_message: str) -> None:
     """Qualquer resposta do lead interrompe imediatamente a régua de follow-up."""
-    now = _now_utc()
+    now = now_utc()
     updates = {"last_inbound_at": now}
 
     if lead.followup_status == "running":
@@ -177,8 +161,8 @@ async def arm_followup_waiting_reply(lead: Lead) -> None:
         return
 
     scenario = _scenario_for_lead(lead)
-    now = _now_utc()
-    next_at = _fit_business_hours(_step_due_at(lead.model_copy(update={"followup_anchor_at": now}), scenario, 0))
+    now = now_utc()
+    next_at = fit_business_hours(_step_due_at(lead.model_copy(update={"followup_anchor_at": now}), scenario, 0))
 
     await update_lead_field(
         lead.phone_number,
@@ -196,13 +180,23 @@ async def arm_followup_waiting_reply(lead: Lead) -> None:
 
 
 async def process_due_followups() -> None:
-    now = _now_utc()
+    now = now_utc()
     async for lead in iter_leads():
-        if lead.course_slug != CourseSlug.POS_FISIO_NEURO:
-            continue
-        if not lead.followup_enabled or lead.followup_status != "running" or not lead.followup_next_at:
-            continue
-        if lead.followup_next_at > now:
+        should_process_followup = (
+            lead.course_slug == CourseSlug.POS_FISIO_NEURO
+            and lead.followup_enabled
+            and lead.followup_status == "running"
+            and lead.followup_next_at
+            and lead.followup_next_at <= now
+        )
+
+        should_process_welcome = (
+            lead.pending_welcome_template
+            and lead.welcome_next_at
+            and lead.welcome_next_at <= now
+        )
+
+        if not should_process_followup and not should_process_welcome:
             continue
 
         token = await acquire_followup_lock(lead.phone_number, ttl_seconds=60)
@@ -213,17 +207,25 @@ async def process_due_followups() -> None:
             fresh = await get_lead(lead.phone_number)
             if not fresh:
                 continue
-            await _process_one(fresh)
+
+            if should_process_welcome:
+                await _process_pending_welcome(fresh)
+                fresh = await get_lead(lead.phone_number)
+                if not fresh:
+                    continue
+
+            if should_process_followup:
+                await _process_one(fresh)
         finally:
             await release_followup_lock(lead.phone_number, token)
 
 
 async def _process_one(lead: Lead) -> None:
-    now = _now_utc()
+    now = now_utc()
     scenario = lead.followup_scenario or _scenario_for_lead(lead)
     step = lead.followup_step
 
-    due_at = _fit_business_hours(_step_due_at(lead, scenario, step))
+    due_at = fit_business_hours(_step_due_at(lead, scenario, step))
     if now < due_at:
         await update_lead_field(lead.phone_number, followup_next_at=due_at)
         return
@@ -255,7 +257,7 @@ async def _process_one(lead: Lead) -> None:
             return
 
         next_step = step + 1
-        next_at = _fit_business_hours(_step_due_at(lead, scenario, next_step))
+        next_at = fit_business_hours(_step_due_at(lead, scenario, next_step))
         await update_lead_field(
             lead.phone_number,
             followup_step=next_step,
@@ -272,6 +274,40 @@ async def _process_one(lead: Lead) -> None:
         )
     except Exception as e:
         logger.error("Erro ao processar follow-up.", phone=lead.phone_number, scenario=scenario, step=step, error=str(e))
-        retry_at = _fit_business_hours(now + timedelta(minutes=15))
+        retry_at = fit_business_hours(now + timedelta(minutes=15))
         await update_lead_field(lead.phone_number, followup_next_at=retry_at)
         await asyncio.sleep(0)
+
+
+async def _process_pending_welcome(lead: Lead) -> None:
+    if not lead.pending_welcome_template:
+        return
+
+    next_at = lead.welcome_next_at or fit_business_hours(now_utc())
+    if next_at > now_utc():
+        return
+
+    try:
+        template_name = lead.welcome_template_name or WELCOME_TEMPLATE_NAME
+        await whatsapp.send_template(
+            to=lead.phone_number,
+            template_name=template_name,
+            language_code="pt_BR",
+        )
+        await update_lead_field(
+            lead.phone_number,
+            pending_welcome_template=False,
+            welcome_template_name=None,
+            welcome_next_at=None,
+            awaiting_template_reply=True,
+        )
+        logger.info("✅ Template inicial pendente enviado no horário comercial.", phone=lead.phone_number)
+    except Exception as e:
+        retry_at = fit_business_hours(now_utc() + timedelta(minutes=30))
+        await update_lead_field(lead.phone_number, welcome_next_at=retry_at)
+        logger.error(
+            "Erro ao enviar template inicial pendente.",
+            phone=lead.phone_number,
+            error=str(e),
+            retry_at=str(retry_at),
+        )

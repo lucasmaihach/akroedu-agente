@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import structlog
 
 from app.models.lead import Lead, CourseSlug, LeadStage
@@ -8,6 +10,7 @@ from app.agents.courses.pos_fisio_neuro_agent import PosFisioNeuroAgent
 from app.memory.session import update_lead_field
 from app.services import whatsapp, escalation
 from app.agents.courses.pos_fisio_neuro_faq import match_faq_response
+from app.utils.business_hours import is_within_business_hours, now_utc
 
 logger = structlog.get_logger()
 
@@ -41,6 +44,36 @@ def _looks_like_question(text: str) -> bool:
 
     strong_terms = {"cancelamento", "cancelar", "reembolso", "multa", "mensalidade", "preco", "preço", "valor"}
     return any(t in strong_terms for t in tokens)
+
+
+def _extract_last_question(text_or_list) -> str | None:
+    """Retorna a última bolha que contém interrogação, se existir."""
+    if not text_or_list:
+        return None
+
+    items = text_or_list if isinstance(text_or_list, list) else [text_or_list]
+    for item in reversed(items):
+        if isinstance(item, str) and "?" in item:
+            return item.strip()
+    return None
+
+
+def _get_pending_engagement_question(lead: Lead, script: list[dict]) -> str | None:
+    """
+    Tenta recuperar a última pergunta de engajamento do bloco anterior.
+    Usado quando o lead interrompe com FAQ para respondermos a dúvida
+    e depois puxarmos de volta para o roteiro sem avançar etapa.
+    """
+    if lead.script_step <= 0 or lead.script_step > len(script):
+        return None
+
+    previous_step = script[lead.script_step - 1]
+    for field in ("post_text", "mid_text", "pre_text"):
+        question = _extract_last_question(previous_step.get(field))
+        if question:
+            return question
+
+    return None
 
 
 async def _send_delayed_reply(lead: Lead, text: str) -> None:
@@ -101,14 +134,31 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
     # 3. Se não identificou ainda, pede para o lead escolher
     if course == CourseSlug.UNKNOWN:
         if lead.stage == LeadStage.NEW:
-            # Primeiro contato — envia boas-vindas
+            # Primeiro contato — envia boas-vindas apenas no horário comercial
+            if not is_within_business_hours(now_utc()):
+                logger.info(
+                    "Lead novo fora do horário comercial — boas-vindas não enviada.",
+                    phone=lead.phone_number,
+                )
+                return False
+
             lead = await update_lead_field(
                 lead.phone_number,
                 stage=LeadStage.IDENTIFYING,
             )
             await whatsapp.send_text(to=lead.phone_number, text=_build_welcome_message())
         else:
-            # Lead já está em conversa mas não identificou o curso
+            # Lead já está em conversa mas não identificou o curso.
+            # Evita repetir a mesma pergunta em curto intervalo por reentregas/eventos duplicados.
+            now = now_utc()
+            if lead.last_unknown_prompt_at and (now - lead.last_unknown_prompt_at) < timedelta(hours=2):
+                logger.info(
+                    "Prompt de identificação suprimido para evitar repetição.",
+                    phone=lead.phone_number,
+                    last_unknown_prompt_at=str(lead.last_unknown_prompt_at),
+                )
+                return False
+
             await whatsapp.send_text(
                 to=lead.phone_number,
                 text=(
@@ -116,6 +166,7 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                     "Assim consigo te ajudar melhor! 😊"
                 ),
             )
+            await update_lead_field(lead.phone_number, last_unknown_prompt_at=now)
         return False
 
     # 4. Atualiza o estágio para NURTURING se ainda estava em IDENTIFYING/NEW
@@ -125,6 +176,7 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
             lead.phone_number,
             stage=LeadStage.NURTURING,
             course_slug=course,
+            last_unknown_prompt_at=None,
         )
         # Primeiro contato: o script engine (step 0) envia o BLOCO 1 de boas-vindas.
         # Não chamamos o agente aqui para evitar mensagem dupla.
@@ -199,6 +251,11 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
             faq_response, notify_human = match_faq_response(user_message)
             if faq_response:
                 await _send_delayed_reply(lead, faq_response)
+
+                pending_question = _get_pending_engagement_question(lead, current_script)
+                if pending_question:
+                    await whatsapp.send_text(to=lead.phone_number, text=pending_question)
+
                 if notify_human:
                     await escalation.notify_human_only(
                         lead=lead,
@@ -206,12 +263,15 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                         user_message=user_message,
                     )
                 logger.info(
-                    "FAQ respondido durante script ativo.",
+
+                    "FAQ respondido durante script ativo; aguardando resposta de engajamento.",
                     phone=lead.phone_number,
                     step=lead.script_step,
                     notify_human=notify_human,
+                    pending_question=bool(pending_question),
                 )
-                return True
+
+                return False
 
             # Só trata como FAQ não mapeado se realmente parecer pergunta.
             # Evita fallback sem sentido em respostas normais do lead (ex.: "sou formado há 5 anos").
@@ -220,17 +280,25 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                     lead,
                     "Boa pergunta! Eu vou verificar certinho pra te responder com precisão e já te respondo 😊",
                 )
+
+                pending_question = _get_pending_engagement_question(lead, current_script)
+                if pending_question:
+                    await whatsapp.send_text(to=lead.phone_number, text=pending_question)
+
                 await escalation.notify_human_only(
                     lead=lead,
                     reason="Pergunta fora do FAQ durante script ativo",
                     user_message=user_message,
                 )
                 logger.info(
-                    "Pergunta fora do FAQ durante script ativo — humano notificado e script continua.",
+
+                    "Pergunta fora do FAQ durante script ativo — humano notificado e aguardando resposta de engajamento.",
                     phone=lead.phone_number,
                     step=lead.script_step,
+                    pending_question=bool(pending_question),
                 )
-                return True
+
+                return False
 
             logger.info(
                 "Mensagem normal durante script ativo (sem FAQ) — avançando script.",

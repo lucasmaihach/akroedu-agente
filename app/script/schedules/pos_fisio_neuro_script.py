@@ -280,7 +280,7 @@ POS_FISIO_NEURO_SCRIPT: list[dict] = [
         "audio": "2075466936567052",
         "audio_duration_seconds": 61,
         "post_text": [
-            "Para garantir sua vaga é só acessar o link abaixo 👇\nhttps://link-de-teste.com/pos-fisio-neuro",
+            "Para garantir sua vaga, esse é o link da taxa de matrícula (R$ 197) 👇\nhttps://www.asaas.com/c/p2hqatm2cr2qkfsq",
             "Como prefere fazer: PIX ou cartão? 😊",
         ],
         "trigger": "response",

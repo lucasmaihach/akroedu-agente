@@ -3,6 +3,7 @@ import structlog
 from fastapi import APIRouter, Request, HTTPException
 
 from app.config import settings
+from app.models.lead import LeadStage
 from app.models.message import MetaWebhookPayload
 from app.memory.session import get_or_create_lead, is_message_already_processed
 from app.agents.dispatcher import dispatch
@@ -182,6 +183,11 @@ async def _handle_incoming_message(msg, value) -> None:
         update_kwargs = {"last_received_msg_id": msg.id}
         if lead.awaiting_template_reply:
             update_kwargs["awaiting_template_reply"] = False
+
+            # Quando o lead responde ao template inicial enviado pelo CRM,
+            # pulamos o BLOCO 1 (apresentação) para evitar repetição de boas-vindas.
+            if lead.stage == LeadStage.NURTURING and lead.script_step == 0:
+                update_kwargs["script_step"] = 1
 
         lead = await _upd(phone_number, **update_kwargs)
 

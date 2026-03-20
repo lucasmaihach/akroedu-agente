@@ -1,6 +1,7 @@
 import json
 import redis.asyncio as aioredis
 import structlog
+from sqlalchemy import select
 from typing import Optional, AsyncIterator
 
 from datetime import datetime, timezone
@@ -103,7 +104,8 @@ async def update_lead_field(phone: str, **kwargs) -> Lead:
 # ── Histórico de conversa ─────────────────────────────────────────────────────
 
 async def append_message(phone: str, role: str, content: str) -> None:
-    """Adiciona uma mensagem ao histórico da conversa (lista no Redis)."""
+    """Adiciona mensagem no Redis (cache) e também persiste no PostgreSQL."""
+    # Cache temporário no Redis (usado pelo agente em tempo real)
     r = get_redis()
     message = json.dumps({"role": role, "content": content})
     ttl = settings.session_ttl_hours * 3600
@@ -111,12 +113,61 @@ async def append_message(phone: str, role: str, content: str) -> None:
     await r.rpush(key, message)
     await r.expire(key, ttl)
 
+    # Persistência definitiva no PostgreSQL (para relatórios e auditoria)
+    try:
+        from app.db.database import AsyncSessionLocal
+        from app.db.orm_models import ConversationORM
+
+        async with AsyncSessionLocal() as session:
+            session.add(
+                ConversationORM(
+                    phone_number=phone,
+                    role=role,
+                    content=content,
+                )
+            )
+            await session.commit()
+    except Exception as e:
+        logger.error(
+            "❌ Falha ao persistir conversa no PostgreSQL.",
+            phone=phone,
+            role=role,
+            error=str(e),
+        )
+
 
 async def get_history(phone: str, last_n: int = 20) -> list[dict]:
-    """Retorna as últimas N mensagens do histórico."""
+    """Retorna as últimas N mensagens do histórico em cache (Redis)."""
     r = get_redis()
     raw_messages = await r.lrange(_history_key(phone), -last_n, -1)
     return [json.loads(m) for m in raw_messages]
+
+
+async def get_history_persistent(phone: str, last_n: int = 200) -> list[dict]:
+    """Retorna histórico persistido no PostgreSQL (não expira com TTL)."""
+    try:
+        from app.db.database import AsyncSessionLocal
+        from app.db.orm_models import ConversationORM
+
+        async with AsyncSessionLocal() as session:
+            stmt = (
+                select(ConversationORM)
+                .where(ConversationORM.phone_number == phone)
+                .order_by(ConversationORM.created_at.desc())
+                .limit(last_n)
+            )
+            result = await session.execute(stmt)
+            rows = list(result.scalars().all())
+
+        rows.reverse()  # mais antigo -> mais novo
+        return [{"role": row.role, "content": row.content} for row in rows]
+    except Exception as e:
+        logger.error(
+            "❌ Falha ao buscar histórico persistente no PostgreSQL.",
+            phone=phone,
+            error=str(e),
+        )
+        return []
 
 
 async def clear_history(phone: str) -> None:

@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.memory.session import get_history, iter_leads
+from app.memory.session import get_history, get_history_persistent, iter_leads
 from app.models.lead import LeadStage
 from app.services import whatsapp
 
@@ -238,7 +238,10 @@ async def admin_monitor_history(
     if lead_found is None:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
 
-    history = await get_history(clean_phone, last_n=200)
+    history = await get_history_persistent(clean_phone, last_n=500)
+    if not history:
+        history = await get_history(clean_phone, last_n=200)
+
     return {
         "lead": {
             "phone_number": lead_found.phone_number,

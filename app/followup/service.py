@@ -152,7 +152,7 @@ async def stop_followup_on_inbound(lead: Lead, user_message: str) -> None:
 
 
 async def mark_price_sent(phone: str) -> None:
-    await update_lead_field(phone, price_sent_at=_now_utc())
+    await update_lead_field(phone, price_sent_at=now_utc())
 
 
 async def arm_followup_waiting_reply(lead: Lead) -> None:

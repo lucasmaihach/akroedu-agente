@@ -9,7 +9,6 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from app.config import settings
 from app.memory.session import get_or_create_lead, update_lead_field
 from app.models.lead import CourseSlug, LeadStage
-from app.script.engine import SCRIPT_CONFIGS
 from app.services import whatsapp
 from app.utils.business_hours import now_utc, fit_business_hours, is_within_business_hours
 
@@ -85,11 +84,6 @@ def _build_course_aliases() -> dict[CourseSlug, set[str]]:
             "pos_fisio_neurofuncional",
         },
     }
-
-    for slug, config in SCRIPT_CONFIGS.items():
-        name = config.get("name")
-        if isinstance(name, str) and name.strip() and slug in aliases:
-            aliases[slug].add(_normalize_text(name))
 
     return aliases
 

@@ -9,7 +9,7 @@ services:
     env_file:
       - .env
     environment:
-      ESCALATION_WHATSAPP_NUMBER: "5511913140331"
+      ESCALATION_WHATSAPP_NUMBER: "5511991190292"
     depends_on:
       - redis
       - postgres

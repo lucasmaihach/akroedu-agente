@@ -12,6 +12,12 @@ from app.utils.business_hours import now_utc
 
 logger = structlog.get_logger()
 
+
+def _db_now():
+    """Retorna datetime UTC naive para colunas TIMESTAMP WITHOUT TIME ZONE."""
+    return now_utc().replace(tzinfo=None)
+
+
 JOB_TYPE_DEBOUNCE_INBOUND = "debounce_inbound"
 JOB_TYPE_FAQ_REPLY_RESUME = "faq_reply_resume"
 
@@ -25,7 +31,7 @@ async def schedule_debounce_inbound(
     delay_seconds: int,
 ) -> None:
     """Acumula mensagens inbound em um job persistente de debounce."""
-    inbound_at = now_utc()
+    inbound_at = _db_now()
     run_at = inbound_at + timedelta(seconds=delay_seconds)
 
     async with AsyncSessionLocal() as session:
@@ -83,7 +89,7 @@ async def schedule_faq_reply_resume(
     delay_seconds: int,
 ) -> None:
     """Agenda resposta de FAQ + retomada de script de forma persistente."""
-    scheduled_at = now_utc()
+    scheduled_at = _db_now()
     run_at = scheduled_at + timedelta(seconds=delay_seconds)
     payload = {
         "faq_response": faq_response,
@@ -101,7 +107,7 @@ async def schedule_faq_reply_resume(
                 PendingJobORM.phone_number == phone,
                 PendingJobORM.status.in_(_PENDING_STATUSES),
             )
-            .values(status="cancelled", completed_at=now_utc())
+            .values(status="cancelled", completed_at=_db_now())
         )
         await session.execute(cancel_stmt)
 
@@ -119,7 +125,7 @@ async def schedule_faq_reply_resume(
 
 async def claim_due_jobs(limit: int = 50) -> list[PendingJobORM]:
     """Faz claim otimista dos jobs vencidos para execução."""
-    now = now_utc()
+    now = _db_now()
     claimed_ids: list[int] = []
 
     async with AsyncSessionLocal() as session:
@@ -158,7 +164,7 @@ async def complete_job(job_id: int) -> None:
         stmt = (
             update(PendingJobORM)
             .where(PendingJobORM.id == job_id)
-            .values(status="done", completed_at=now_utc(), last_error=None)
+            .values(status="done", completed_at=_db_now(), last_error=None)
         )
         await session.execute(stmt)
         await session.commit()
@@ -180,7 +186,7 @@ async def mark_job_failed(job_id: int, error: str) -> None:
         stmt = (
             update(PendingJobORM)
             .where(PendingJobORM.id == job_id)
-            .values(status="failed", completed_at=now_utc(), last_error=error)
+            .values(status="failed", completed_at=_db_now(), last_error=error)
         )
         await session.execute(stmt)
         await session.commit()
@@ -188,7 +194,7 @@ async def mark_job_failed(job_id: int, error: str) -> None:
 
 async def reset_stale_running_jobs(max_running_minutes: int = 15) -> int:
     """Reativa jobs que ficaram em running após restart/crash."""
-    threshold = now_utc() - timedelta(minutes=max_running_minutes)
+    threshold = _db_now() - timedelta(minutes=max_running_minutes)
     async with AsyncSessionLocal() as session:
         stmt = (
             update(PendingJobORM)
@@ -199,7 +205,7 @@ async def reset_stale_running_jobs(max_running_minutes: int = 15) -> int:
                     PendingJobORM.started_at <= threshold,
                 ),
             )
-            .values(status="pending", run_at=now_utc(), started_at=None)
+            .values(status="pending", run_at=_db_now(), started_at=None)
         )
         result = await session.execute(stmt)
         await session.commit()

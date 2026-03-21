@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import structlog
 
@@ -196,6 +196,9 @@ def _parse_iso_datetime(raw_value: str | None) -> datetime | None:
     if not raw_value:
         return None
     try:
-        return datetime.fromisoformat(raw_value)
+        dt = datetime.fromisoformat(raw_value)
+        if dt.tzinfo is not None:
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
     except Exception:
         return None

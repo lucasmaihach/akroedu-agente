@@ -171,11 +171,12 @@ async def complete_job(job_id: int) -> None:
 
 
 async def reschedule_job(job_id: int, run_at, error: str | None = None) -> None:
+    run_at_db = run_at.replace(tzinfo=None) if getattr(run_at, "tzinfo", None) is not None else run_at
     async with AsyncSessionLocal() as session:
         stmt = (
             update(PendingJobORM)
             .where(PendingJobORM.id == job_id)
-            .values(status="pending", run_at=run_at, last_error=error)
+            .values(status="pending", run_at=run_at_db, last_error=error)
         )
         await session.execute(stmt)
         await session.commit()

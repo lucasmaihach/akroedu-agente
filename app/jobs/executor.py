@@ -27,6 +27,14 @@ MAX_ATTEMPTS = 8
 NON_SCRIPT_RESPONSE_DELAY_SECONDS = 2
 
 
+def _as_naive_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
 async def resume_pending_jobs_on_startup() -> None:
     recovered = await reset_stale_running_jobs(max_running_minutes=10)
     if recovered:
@@ -70,18 +78,19 @@ async def _execute_debounce_inbound(job_id: int, phone: str, payload: dict) -> N
 
     job_last_inbound_at = _parse_iso_datetime(payload.get("last_inbound_at"))
     current_lead = await get_lead(phone)
+    lead_last_inbound_at = _as_naive_utc(current_lead.last_inbound_at) if current_lead else None
     if (
         current_lead
-        and current_lead.last_inbound_at
+        and lead_last_inbound_at
         and job_last_inbound_at
-        and current_lead.last_inbound_at > job_last_inbound_at
+        and lead_last_inbound_at > job_last_inbound_at
     ):
         logger.info(
             "⏭️ Job de debounce ignorado por existir inbound mais recente.",
             phone=phone,
             job_id=job_id,
             job_last_inbound_at=str(job_last_inbound_at),
-            lead_last_inbound_at=str(current_lead.last_inbound_at),
+            lead_last_inbound_at=str(lead_last_inbound_at),
         )
         await complete_job(job_id)
         return
@@ -130,13 +139,14 @@ async def _execute_faq_reply_resume(job_id: int, phone: str, payload: dict) -> N
         return
 
     scheduled_at = _parse_iso_datetime(payload.get("scheduled_at"))
-    if lead.last_inbound_at and scheduled_at and lead.last_inbound_at > scheduled_at:
+    lead_last_inbound_at = _as_naive_utc(lead.last_inbound_at)
+    if lead_last_inbound_at and scheduled_at and lead_last_inbound_at > scheduled_at:
         logger.info(
             "⏭️ Job de FAQ ignorado por existir inbound após agendamento.",
             phone=phone,
             job_id=job_id,
             scheduled_at=str(scheduled_at),
-            lead_last_inbound_at=str(lead.last_inbound_at),
+            lead_last_inbound_at=str(lead_last_inbound_at),
         )
         await complete_job(job_id)
         return

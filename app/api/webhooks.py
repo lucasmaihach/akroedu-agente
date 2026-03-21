@@ -22,7 +22,15 @@ INBOUND_ANALYSIS_DELAY_SECONDS = 30
 
 
 def _normalize_phone(phone: str | None) -> str:
-    return "".join(ch for ch in (phone or "") if ch.isdigit())
+    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
+
+    # Canonicaliza Brasil para evitar divergência entre CRM e WhatsApp inbound
+    if digits.startswith("55") and len(digits) in (12, 13):
+        return digits
+    if len(digits) in (10, 11):
+        return f"55{digits}"
+
+    return digits
 
 
 def _log_status_updates(value) -> None:
@@ -145,7 +153,7 @@ async def _handle_incoming_message(msg, value) -> None:
     Processa uma mensagem de entrada individual.
     """
     try:
-        phone_number = msg.from_
+        phone_number = _normalize_phone(msg.from_)
         contact_name = value.contacts[0].profile.get("name") if value.contacts else None
         message_type = msg.type
 

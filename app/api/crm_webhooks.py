@@ -33,7 +33,15 @@ def _unwrap_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 def _normalize_phone(phone: str) -> str:
-    return "".join(ch for ch in (phone or "") if ch.isdigit())
+    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
+
+    # Canonicaliza Brasil para evitar duplicidade 11XXXXXXXXX vs 55XXXXXXXXXXX
+    if digits.startswith("55") and len(digits) in (12, 13):
+        return digits
+    if len(digits) in (10, 11):
+        return f"55{digits}"
+
+    return digits
 
 
 def _extract_nested(payload: dict[str, Any], *keys: str) -> Any:

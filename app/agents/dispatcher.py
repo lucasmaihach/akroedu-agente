@@ -210,6 +210,19 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
         # Inclui perguntas de preço, que devem ser respondidas pelo FAQ e depois
         # retomar o script automaticamente sem depender de nova resposta do lead.
         if course == CourseSlug.POS_FISIO_NEURO:
+            if _is_asking_price(user_message):
+                await whatsapp.send_text(
+                    to=lead.phone_number,
+                    text="Perfeito, já vou te explicar os valores no próximo passo 😊",
+                )
+                await update_lead_field(lead.phone_number, script_step=price_skip_to_step)
+                logger.info(
+                    "💰 Lead perguntou preço durante script ativo (POS) — sem revelar valor antes da hora.",
+                    phone=lead.phone_number,
+                    new_step=price_skip_to_step,
+                )
+                return True
+
             faq_response, notify_human = match_faq_response(user_message)
             if faq_response:
                 await schedule_faq_reply_resume(

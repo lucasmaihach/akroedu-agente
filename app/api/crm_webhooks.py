@@ -429,6 +429,8 @@ async def receive_sprinthub_webhook(
             "followup_next_at": first_followup_at,
         }
 
+    followup_apply_updates = {**followup_reset_updates, **followup_updates}
+
     lead = await update_lead_field(
         phone,
         awaiting_template_reply=True,
@@ -436,8 +438,7 @@ async def receive_sprinthub_webhook(
         welcome_template_name=None,
         welcome_next_at=None,
         **common_updates,
-        **followup_reset_updates,
-        **followup_updates,
+        **followup_apply_updates,
     )
 
     logger.info(

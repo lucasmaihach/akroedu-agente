@@ -21,6 +21,10 @@ INBOUND_ANALYSIS_DELAY_SECONDS = 30
 
 
 
+def _normalize_phone(phone: str | None) -> str:
+    return "".join(ch for ch in (phone or "") if ch.isdigit())
+
+
 def _log_status_updates(value) -> None:
     """Registra status de entrega das mensagens enviadas pela Meta."""
     if not value.statuses:
@@ -50,6 +54,19 @@ def _log_status_updates(value) -> None:
                 timestamp=timestamp,
                 errors=errors,
             )
+
+            # Evita loop de alertas quando o próprio número de escalonamento
+            # está inválido/bloqueado e gera delivery_failed em cascata.
+            recipient_norm = _normalize_phone(recipient_id)
+            escalation_norm = _normalize_phone(settings.escalation_whatsapp_number)
+            if recipient_norm and escalation_norm and recipient_norm == escalation_norm:
+                logger.warning(
+                    "⚠️ delivery_failed no número de escalonamento; alerta suprimido para evitar loop.",
+                    recipient=recipient_id,
+                    msg_id=msg_id,
+                )
+                continue
+
             asyncio.create_task(
                 notify_conversation_error(
                     source="meta.delivery_failed",

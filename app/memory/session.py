@@ -58,6 +58,14 @@ def _followup_lock_key(phone: str) -> str:
 
 # ── Gerenciamento do Lead em cache ────────────────────────────────────────────
 
+def _to_db_datetime(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
 def _lead_from_orm(lead_orm: LeadORM) -> Lead:
     """Converte registro do PostgreSQL para o modelo de domínio Lead."""
     try:
@@ -141,20 +149,20 @@ async def _save_lead_postgres(lead: Lead) -> None:
             lead_orm.followup_status = lead.followup_status
             lead_orm.followup_scenario = lead.followup_scenario
             lead_orm.followup_step = lead.followup_step
-            lead_orm.followup_next_at = lead.followup_next_at
-            lead_orm.followup_anchor_at = lead.followup_anchor_at
-            lead_orm.followup_started_at = lead.followup_started_at
-            lead_orm.followup_finished_at = lead.followup_finished_at
+            lead_orm.followup_next_at = _to_db_datetime(lead.followup_next_at)
+            lead_orm.followup_anchor_at = _to_db_datetime(lead.followup_anchor_at)
+            lead_orm.followup_started_at = _to_db_datetime(lead.followup_started_at)
+            lead_orm.followup_finished_at = _to_db_datetime(lead.followup_finished_at)
             lead_orm.followup_stopped_reason = lead.followup_stopped_reason
 
-            lead_orm.last_inbound_at = lead.last_inbound_at
-            lead_orm.price_sent_at = lead.price_sent_at
-            lead_orm.last_unknown_prompt_at = lead.last_unknown_prompt_at
+            lead_orm.last_inbound_at = _to_db_datetime(lead.last_inbound_at)
+            lead_orm.price_sent_at = _to_db_datetime(lead.price_sent_at)
+            lead_orm.last_unknown_prompt_at = _to_db_datetime(lead.last_unknown_prompt_at)
 
             lead_orm.awaiting_template_reply = lead.awaiting_template_reply
             lead_orm.pending_welcome_template = lead.pending_welcome_template
             lead_orm.welcome_template_name = lead.welcome_template_name
-            lead_orm.welcome_next_at = lead.welcome_next_at
+            lead_orm.welcome_next_at = _to_db_datetime(lead.welcome_next_at)
 
             await session.commit()
     except Exception as e:

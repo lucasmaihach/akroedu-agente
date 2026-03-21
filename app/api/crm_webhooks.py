@@ -336,16 +336,19 @@ async def receive_sprinthub_webhook(
         script_step=0,
         is_escalated=False,
         price_ask_count=0,
-        followup_status="idle",
-        followup_scenario=None,
-        followup_step=0,
-        followup_next_at=None,
-        followup_anchor_at=None,
-        followup_started_at=None,
-        followup_finished_at=None,
-        followup_stopped_reason=None,
         price_sent_at=None,
     )
+
+    followup_reset_updates = {
+        "followup_status": "idle",
+        "followup_scenario": None,
+        "followup_step": 0,
+        "followup_next_at": None,
+        "followup_anchor_at": None,
+        "followup_started_at": None,
+        "followup_finished_at": None,
+        "followup_stopped_reason": None,
+    }
 
     if not is_within_business_hours(now_utc()):
         welcome_next_at = fit_business_hours(now_utc())
@@ -356,6 +359,7 @@ async def receive_sprinthub_webhook(
             welcome_template_name=WELCOME_TEMPLATE_NAME,
             welcome_next_at=welcome_next_at,
             **common_updates,
+            **followup_reset_updates,
         )
         logger.info(
             "🕒 Lead recebido fora do horário; template inicial agendado.",
@@ -424,6 +428,7 @@ async def receive_sprinthub_webhook(
         welcome_template_name=None,
         welcome_next_at=None,
         **common_updates,
+        **followup_reset_updates,
         **followup_updates,
     )
 

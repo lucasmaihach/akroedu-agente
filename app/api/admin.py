@@ -51,39 +51,61 @@ async def admin_monitor_page(
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Monitor de Atendimento</title>
   <style>
-    body {{ margin: 0; font-family: Arial, sans-serif; background:#f4f6f8; color:#1f2937; }}
-    .app {{ display:grid; grid-template-columns: 360px 1fr; height:100vh; }}
-    .sidebar {{ border-right:1px solid #d1d5db; background:#fff; overflow:auto; }}
-    .chat {{ display:flex; flex-direction:column; }}
-    .header {{ padding:12px 16px; border-bottom:1px solid #d1d5db; background:#fff; }}
-    .lead-item {{ padding:12px 14px; border-bottom:1px solid #eef2f7; cursor:pointer; }}
-    .lead-item:hover {{ background:#f9fafb; }}
-    .lead-item.active {{ background:#e8f0ff; }}
-    .name {{ font-weight:700; }}
-    .meta {{ font-size:12px; color:#6b7280; margin-top:4px; }}
-    .preview {{ font-size:13px; margin-top:8px; color:#374151; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-    .chat-body {{ flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }}
-    .bubble {{ max-width:70%; padding:10px 12px; border-radius:12px; line-height:1.4; white-space:pre-wrap; }}
-    .bubble.user {{ align-self:flex-start; background:#fff; border:1px solid #d1d5db; }}
-    .bubble.assistant {{ align-self:flex-end; background:#dcfce7; border:1px solid #86efac; }}
-    .bubble small {{ display:block; opacity:0.7; margin-top:6px; font-size:11px; }}
-    .empty {{ padding:22px; color:#6b7280; }}
-    .toolbar {{ padding:8px 12px; border-bottom:1px solid #e5e7eb; background:#fff; display:flex; gap:8px; align-items:center; }}
-    input[type="text"] {{ width:100%; padding:8px; border:1px solid #d1d5db; border-radius:8px; }}
-    .tag {{ background:#eef2ff; color:#4338ca; border-radius:999px; font-size:11px; padding:2px 8px; margin-left:6px; }}
+    :root {{
+      --bg: #f3f6fb;
+      --panel: #ffffff;
+      --line: #e5eaf2;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --brand: #3b82f6;
+      --brand-soft: #eff6ff;
+      --assistant: #dcfce7;
+      --assistant-line: #86efac;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: Inter, Arial, sans-serif; background: var(--bg); color: var(--text); }}
+    .app {{ display:grid; grid-template-columns: 320px 1fr; height:100vh; }}
+    .sidebar {{ border-right:1px solid var(--line); background:var(--panel); overflow:auto; }}
+    .chat {{ display:flex; flex-direction:column; min-width: 0; }}
+    .header {{ padding:14px 18px; border-bottom:1px solid var(--line); background:var(--panel); }}
+    .header-title {{ font-weight:700; font-size:15px; }}
+    .header-meta {{ font-size:12px; color:var(--muted); margin-top:3px; }}
+    .toolbar {{ padding:12px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:10; }}
+    .toolbar-title {{ font-weight:700; margin-bottom:8px; font-size:14px; }}
+    input[type="text"] {{ width:100%; padding:10px 12px; border:1px solid #cfd8e3; border-radius:10px; font-size:14px; }}
+    .lead-item {{ padding:12px 14px; border-bottom:1px solid #f0f3f8; cursor:pointer; }}
+    .lead-item:hover {{ background:#f8fbff; }}
+    .lead-item.active {{ background:var(--brand-soft); border-left:3px solid var(--brand); padding-left:11px; }}
+    .name {{ font-weight:700; display:flex; align-items:center; gap:6px; }}
+    .meta {{ font-size:12px; color:var(--muted); margin-top:4px; }}
+    .preview {{ font-size:13px; margin-top:7px; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    .tag {{ background:#eef2ff; color:#4338ca; border-radius:999px; font-size:11px; padding:2px 8px; }}
+    .chat-body {{ flex:1; overflow:auto; padding:10px 12px; display:flex; flex-direction:column; gap:6px; background:#efeae2; }}
+    .msg-row {{ display:flex; width:100%; margin:0; }}
+    .msg-row.user {{ justify-content:flex-start; }}
+    .msg-row.assistant {{ justify-content:flex-end; }}
+    .bubble {{ max-width:min(58%, 560px); padding:8px 10px; border-radius:8px; line-height:1.3; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; font-size:13px; }}
+    .bubble.user {{ background:#ffffff; border:1px solid #e5e7eb; border-top-left-radius:2px; }}
+    .bubble.assistant {{ background:#d9fdd3; border:1px solid #b8efae; border-top-right-radius:2px; }}
+    .media-chip {{ display:inline-block; font-size:10px; padding:2px 6px; border-radius:999px; background:#e2e8f0; color:#334155; font-weight:700; margin-bottom:4px; }}
+    .empty {{ padding:24px; color:var(--muted); text-align:center; }}
   </style>
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="toolbar">
-        <input id="search" type="text" placeholder="Buscar por nome/telefone" />
+        <div class="toolbar-title">Painel de Atendimento</div>
+        <input id="search" type="text" placeholder="Buscar por nome ou telefone" />
       </div>
       <div id="leadList"></div>
     </aside>
 
     <section class="chat">
-      <div class="header" id="chatHeader">Selecione um lead</div>
+      <div class="header">
+        <div class="header-title" id="chatHeader">Selecione um lead</div>
+        <div class="header-meta" id="chatSubHeader">Histórico em tempo real</div>
+      </div>
       <div class="chat-body" id="chatBody">
         <div class="empty">Sem conversa selecionada.</div>
       </div>
@@ -118,13 +140,16 @@ async def admin_monitor_page(
   function renderLeads() {{
     const q = document.getElementById("search").value.toLowerCase().trim();
     const filtered = allLeads.filter(l =>
-      (l.name || "").toLowerCase().includes(q) ||
-      (l.phone_number || "").toLowerCase().includes(q)
+      String(l.name || "").toLowerCase().includes(q) ||
+      String(l.phone_number || "").toLowerCase().includes(q)
     );
 
     const htmlLeads = filtered.map(l => `
       <div class="lead-item ${{selectedPhone===l.phone_number ? "active" : ""}}" onclick="openChat('${{l.phone_number}}')">
-        <div class="name">${{esc(l.name || "Lead sem nome")}} <span class="tag">${{esc(l.stage)}}</span></div>
+        <div class="name">
+          <span>${{esc(l.name || "Lead sem nome")}}</span>
+          <span class="tag">${{esc(l.stage)}}</span>
+        </div>
         <div class="meta">${{esc(l.phone_number)}} • ${{esc(l.course_slug)}} • passo ${{l.script_step}}</div>
         <div class="preview">${{esc(l.last_message_preview || "Sem mensagens")}}</div>
       </div>
@@ -133,9 +158,33 @@ async def admin_monitor_page(
     document.getElementById("leadList").innerHTML = htmlLeads || "<div class='empty'>Nenhum lead encontrado.</div>";
   }}
 
-  async function openChat(phone) {{
+  function bubbleClass(content, role) {{
+    const side = role === 'assistant' ? 'assistant' : 'user';
+    return `bubble ${{side}}`;
+  }}
+
+  function renderContent(content) {{
+    const c = String(content ?? "");
+    if (c.startsWith("[áudio enviado]")) {{
+      return `<span class="media-chip">ÁUDIO</span>\n${{esc(c)}}`;
+    }}
+    if (c.startsWith("[imagem enviada]")) {{
+      return `<span class="media-chip">IMAGEM</span>\n${{esc(c)}}`;
+    }}
+    if (c.startsWith("[template]")) {{
+      return `<span class="media-chip">TEMPLATE</span>\n${{esc(c)}}`;
+    }}
+    return esc(c);
+  }}
+
+  async function openChat(phone, preserveScroll=false) {{
     selectedPhone = phone;
     renderLeads();
+
+    const body = document.getElementById("chatBody");
+    const shouldStickBottom = preserveScroll
+      ? (body.scrollHeight - body.scrollTop - body.clientHeight) < 120
+      : true;
 
     const res = await fetch(`/admin/monitor/history/${{encodeURIComponent(phone)}}?key=${{encodeURIComponent(adminKey)}}`);
     if (!res.ok) {{
@@ -147,7 +196,8 @@ async def admin_monitor_page(
     const lead = data.lead || {{}};
     const messages = data.messages || [];
 
-    document.getElementById("chatHeader").innerText = `${{lead.name || "Lead sem nome"}} • ${{lead.phone_number || ""}} • ${{lead.stage || ""}}`;
+    document.getElementById("chatHeader").innerText = `${{lead.name || "Lead sem nome"}}`;
+    document.getElementById("chatSubHeader").innerText = `${{lead.phone_number || ""}} • ${{lead.course_slug || ""}} • ${{lead.stage || ""}}`;
 
     if (!messages.length) {{
       document.getElementById("chatBody").innerHTML = "<div class='empty'>Sem histórico para este lead.</div>";
@@ -155,19 +205,26 @@ async def admin_monitor_page(
     }}
 
     document.getElementById("chatBody").innerHTML = messages.map(m => `
-      <div class="bubble ${{m.role === 'assistant' ? 'assistant' : 'user'}}">
-        ${{esc(m.content)}}
-        <small>${{m.role === 'assistant' ? 'Agente' : 'Lead'}}</small>
+      <div class="msg-row ${{m.role === 'assistant' ? 'assistant' : 'user'}}">
+        <div class="${{bubbleClass(m.content, m.role)}}">${{renderContent(m.content)}}</div>
       </div>
     `).join("");
 
-    const body = document.getElementById("chatBody");
-    body.scrollTop = body.scrollHeight;
+    if (shouldStickBottom) {{
+      body.scrollTop = body.scrollHeight;
+    }}
+  }}
+
+  function refreshOpenChat() {{
+    if (selectedPhone) {{
+      openChat(selectedPhone, true);
+    }}
   }}
 
   document.getElementById("search").addEventListener("input", renderLeads);
   loadLeads();
   setInterval(loadLeads, 10000);
+  setInterval(refreshOpenChat, 5000);
 </script>
 </body>
 </html>
@@ -190,7 +247,8 @@ async def admin_monitor_leads(
             continue
 
         history = await get_history(lead.phone_number, last_n=1)
-        last_msg = history[-1]["content"] if history else ""
+        last_msg_raw = history[-1].get("content", "") if history else ""
+        last_msg = last_msg_raw if isinstance(last_msg_raw, str) else str(last_msg_raw)
 
         leads_payload.append(
             {
@@ -242,6 +300,17 @@ async def admin_monitor_history(
     if not history:
         history = await get_history(clean_phone, last_n=200)
 
+    normalized_history = []
+    for m in history:
+        content = m.get("content") if isinstance(m, dict) else ""
+        normalized_history.append(
+            {
+                "role": (m.get("role") if isinstance(m, dict) else "") or "user",
+                "content": content if isinstance(content, str) else str(content or ""),
+                "timestamp": (m.get("timestamp") if isinstance(m, dict) else None),
+            }
+        )
+
     return {
         "lead": {
             "phone_number": lead_found.phone_number,
@@ -250,7 +319,7 @@ async def admin_monitor_history(
             "course_slug": lead_found.course_slug.value,
             "script_step": lead_found.script_step,
         },
-        "messages": history,
+        "messages": normalized_history,
     }
 
 

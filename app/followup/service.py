@@ -15,19 +15,24 @@ from app.memory.session import (
 from app.models.lead import Lead, CourseSlug
 from app.services import whatsapp, escalation
 from app.api.crm_webhooks import WELCOME_TEMPLATE_NAME
-from app.utils.business_hours import now_utc, fit_business_hours
+from app.utils.business_hours import now_utc, fit_business_hours, is_within_business_hours
+from app.services.error_alert import notify_conversation_error
 
 logger = structlog.get_logger()
 
 WINDOW_HOURS = 24
+MIN_FOLLOWUP_GAP_MINUTES = 60
+
+SCENARIO_PRE_PRICE = "pre_price"
+SCENARIO_POST_PRICE = "post_price"
 
 
 C1_FREE = [
-    "Oi {name}, tá por aí? 😅",
-    "Conseguiu ouvir o que te mandei?",
-    "Nossa, você me deixou falando sozinha 😂\nMe fala uma coisa: você já atende pacientes neurológicos no seu consultório?",
-    "Oi {name}, conseguiu ver minhas mensagens?",
-    "Oi {name}, última mensagem por hoje.\nFica à vontade pra me chamar quando quiser retomar, tá? Tenho uma condição especial reservada pra você 🙂",
+    "Oi {name}, tudo bem? Quando puder, me chama por aqui e eu continuo te explicando a pós 😊",
+    "Se fizer sentido pra você, eu te mando os próximos detalhes da formação. Posso continuar?",
+    "Quero te ajudar a decidir com segurança, sem pressa. Você prefere que eu te explique primeiro conteúdo, rotina das aulas ou investimento?",
+    "Oi {name}, fico à disposição. Se quiser, seguimos do ponto em que paramos e eu te explico tudo certinho 🙂",
+    "Oi {name}, encerro por aqui por enquanto. Quando quiser retomar, é só me chamar que eu te atendo com prioridade 😊",
 ]
 
 C2_FREE = [
@@ -69,13 +74,21 @@ def _window_end(lead: Lead) -> datetime:
 
 
 def _scenario_for_lead(lead: Lead) -> str:
-    return "C2" if lead.price_sent_at else "C1"
+    return SCENARIO_POST_PRICE if lead.price_sent_at else SCENARIO_PRE_PRICE
+
+
+def _normalize_scenario(raw_scenario: str | None, lead: Lead) -> str:
+    if raw_scenario in {SCENARIO_PRE_PRICE, "C1"}:
+        return SCENARIO_PRE_PRICE
+    if raw_scenario in {SCENARIO_POST_PRICE, "C2"}:
+        return SCENARIO_POST_PRICE
+    return _scenario_for_lead(lead)
 
 
 def _step_due_at(lead: Lead, scenario: str, step: int) -> datetime:
     anchor = lead.followup_anchor_at or now_utc()
 
-    if scenario == "C1":
+    if scenario == SCENARIO_PRE_PRICE:
         # F1..F5 em: 2h, 3h, 6h, 12h, 20h
         if step <= 4:
             return anchor + timedelta(hours=[2, 3, 6, 12, 20][step])
@@ -99,18 +112,18 @@ def _step_due_at(lead: Lead, scenario: str, step: int) -> datetime:
 
 
 def _is_template_step(scenario: str, step: int) -> bool:
-    return (scenario == "C1" and step >= 5) or (scenario == "C2" and step >= 5)
+    return step >= 5
 
 
 def _final_step_index(scenario: str) -> int:
-    # C1: 5 livres + 4 templates = 9 passos (índice final 8)
-    # C2: 5 livres + 8 templates = 13 passos (índice final 12)
-    return 8 if scenario == "C1" else 12
+    # Pré-preço: 5 livres + 4 templates = 9 passos (índice final 8)
+    # Pós-preço: 5 livres + 8 templates = 13 passos (índice final 12)
+    return 8 if scenario == SCENARIO_PRE_PRICE else 12
 
 
 def _free_text_for_step(lead: Lead, scenario: str, step: int) -> str:
     name = _first_name(lead)
-    if scenario == "C1":
+    if scenario == SCENARIO_PRE_PRICE:
         txt = C1_FREE[step]
     else:
         txt = C2_FREE[step]
@@ -122,7 +135,12 @@ def _free_text_for_step(lead: Lead, scenario: str, step: int) -> str:
 
 
 def _template_name(scenario: str, step: int) -> str:
-    return C1_TEMPLATE_NAMES[step - 5] if scenario == "C1" else C2_TEMPLATE_NAMES[step - 5]
+    return C1_TEMPLATE_NAMES[step - 5] if scenario == SCENARIO_PRE_PRICE else C2_TEMPLATE_NAMES[step - 5]
+
+
+def _followup_dedup_key(lead: Lead, scenario: str, step: int, channel: str) -> str:
+    session_anchor = lead.followup_started_at.isoformat() if lead.followup_started_at else "na"
+    return f"followup:{lead.phone_number}:{session_anchor}:{scenario}:step:{step}:{channel}"
 
 
 async def stop_followup_on_inbound(lead: Lead, user_message: str) -> None:
@@ -155,13 +173,28 @@ async def mark_price_sent(phone: str) -> None:
     await update_lead_field(phone, price_sent_at=now_utc())
 
 
-async def arm_followup_waiting_reply(lead: Lead) -> None:
-    """Ativa/reinicia a régua quando há outbound e aguardamos resposta do lead."""
-    if lead.course_slug != CourseSlug.POS_FISIO_NEURO or not lead.followup_enabled:
+async def _arm_followup_with_scenario(
+    lead: Lead,
+    scenario: str,
+    *,
+    force_restart: bool,
+    source: str,
+) -> None:
+    now = now_utc()
+    scenario = _normalize_scenario(scenario, lead)
+
+    current_scenario = _normalize_scenario(lead.followup_scenario, lead)
+    already_running = lead.followup_status == "running" and lead.followup_next_at is not None
+    if already_running and not force_restart and current_scenario == scenario:
+        logger.info(
+            "↔️ Régua já ativa para o lead; rearm ignorado para evitar duplicidade.",
+            phone=lead.phone_number,
+            scenario=scenario,
+            next_at=str(lead.followup_next_at),
+            source=source,
+        )
         return
 
-    scenario = _scenario_for_lead(lead)
-    now = now_utc()
     next_at = fit_business_hours(_step_due_at(lead.model_copy(update={"followup_anchor_at": now}), scenario, 0))
 
     await update_lead_field(
@@ -176,7 +209,40 @@ async def arm_followup_waiting_reply(lead: Lead) -> None:
         followup_next_at=next_at,
     )
 
-    logger.info("🧭 Régua de follow-up armada.", phone=lead.phone_number, scenario=scenario, next_at=str(next_at))
+    logger.info(
+        "🧭 Régua de follow-up armada.",
+        phone=lead.phone_number,
+        scenario=scenario,
+        next_at=str(next_at),
+        force_restart=force_restart,
+        source=source,
+    )
+
+
+async def arm_followup_waiting_reply(lead: Lead) -> None:
+    """Ativa/reinicia a régua quando há outbound e aguardamos resposta do lead."""
+    if lead.course_slug != CourseSlug.POS_FISIO_NEURO or not lead.followup_enabled:
+        return
+
+    token = await acquire_followup_lock(lead.phone_number, ttl_seconds=30)
+    if not token:
+        logger.info("🔒 Lock de follow-up ocupado; rearm será ignorado para evitar corrida.", phone=lead.phone_number)
+        return
+
+    try:
+        fresh = await get_lead(lead.phone_number)
+        if not fresh or fresh.course_slug != CourseSlug.POS_FISIO_NEURO or not fresh.followup_enabled:
+            return
+
+        scenario = _scenario_for_lead(fresh)
+        await _arm_followup_with_scenario(
+            fresh,
+            scenario,
+            force_restart=True,
+            source="script_response_trigger",
+        )
+    finally:
+        await release_followup_lock(lead.phone_number, token)
 
 
 async def process_due_followups() -> None:
@@ -222,8 +288,18 @@ async def process_due_followups() -> None:
 
 async def _process_one(lead: Lead) -> None:
     now = now_utc()
-    scenario = lead.followup_scenario or _scenario_for_lead(lead)
+    scenario = _normalize_scenario(lead.followup_scenario, lead)
     step = lead.followup_step
+
+    if scenario == SCENARIO_POST_PRICE and lead.price_sent_at is None:
+        scenario = SCENARIO_PRE_PRICE
+        await update_lead_field(lead.phone_number, followup_scenario=scenario)
+
+    if not is_within_business_hours(now):
+        next_at = fit_business_hours(now)
+        await update_lead_field(lead.phone_number, followup_next_at=next_at)
+        logger.info("🕒 Follow-up adiado por fora do horário comercial.", phone=lead.phone_number, next_at=str(next_at))
+        return
 
     due_at = fit_business_hours(_step_due_at(lead, scenario, step))
     if now < due_at:
@@ -234,15 +310,18 @@ async def _process_one(lead: Lead) -> None:
         if _is_template_step(scenario, step):
             template_name = _template_name(scenario, step)
             param = _first_name(lead) or "tudo bem"
+            dedup_key = _followup_dedup_key(lead, scenario, step, f"template:{template_name}")
             await whatsapp.send_template(
                 to=lead.phone_number,
                 template_name=template_name,
                 language_code="pt_BR",
                 body_params=[param],
+                dedup_key=dedup_key,
             )
         else:
             text = _free_text_for_step(lead, scenario, step)
-            await whatsapp.send_text(to=lead.phone_number, text=text)
+            dedup_key = _followup_dedup_key(lead, scenario, step, "text")
+            await whatsapp.send_text(to=lead.phone_number, text=text, dedup_key=dedup_key)
 
         if step >= _final_step_index(scenario):
             await update_lead_field(
@@ -258,6 +337,11 @@ async def _process_one(lead: Lead) -> None:
 
         next_step = step + 1
         next_at = fit_business_hours(_step_due_at(lead, scenario, next_step))
+
+        # Evita mensagens coladas quando múltiplos passos ficaram vencidos fora da janela.
+        min_next_at = fit_business_hours(now + timedelta(minutes=MIN_FOLLOWUP_GAP_MINUTES))
+        if next_at < min_next_at:
+            next_at = min_next_at
         await update_lead_field(
             lead.phone_number,
             followup_step=next_step,
@@ -274,6 +358,15 @@ async def _process_one(lead: Lead) -> None:
         )
     except Exception as e:
         logger.error("Erro ao processar follow-up.", phone=lead.phone_number, scenario=scenario, step=step, error=str(e))
+        await notify_conversation_error(
+            source="followup.process_one",
+            error=e,
+            phone=lead.phone_number,
+            lead_name=lead.name,
+            stage=lead.stage.value,
+            user_message="[followup send]",
+            extra={"scenario": scenario, "step": step},
+        )
         retry_at = fit_business_hours(now + timedelta(minutes=15))
         await update_lead_field(lead.phone_number, followup_next_at=retry_at)
         await asyncio.sleep(0)
@@ -283,16 +376,25 @@ async def _process_pending_welcome(lead: Lead) -> None:
     if not lead.pending_welcome_template:
         return
 
-    next_at = lead.welcome_next_at or fit_business_hours(now_utc())
-    if next_at > now_utc():
+    now = now_utc()
+    if not is_within_business_hours(now):
+        next_at = fit_business_hours(now)
+        await update_lead_field(lead.phone_number, welcome_next_at=next_at)
+        logger.info("🕒 Template inicial pendente adiado por fora do horário comercial.", phone=lead.phone_number, next_at=str(next_at))
+        return
+
+    next_at = lead.welcome_next_at or fit_business_hours(now)
+    if next_at > now:
         return
 
     try:
         template_name = lead.welcome_template_name or WELCOME_TEMPLATE_NAME
+        dedup_key = f"welcome_pending:{lead.phone_number}:{template_name}:{int(next_at.timestamp())}"
         await whatsapp.send_template(
             to=lead.phone_number,
             template_name=template_name,
             language_code="pt_BR",
+            dedup_key=dedup_key,
         )
         await update_lead_field(
             lead.phone_number,
@@ -301,6 +403,15 @@ async def _process_pending_welcome(lead: Lead) -> None:
             welcome_next_at=None,
             awaiting_template_reply=True,
         )
+        refreshed = await get_lead(lead.phone_number)
+        if refreshed and refreshed.followup_enabled and refreshed.course_slug == CourseSlug.POS_FISIO_NEURO:
+            await _arm_followup_with_scenario(
+                refreshed,
+                SCENARIO_PRE_PRICE,
+                force_restart=False,
+                source="pending_welcome_sent",
+            )
+
         logger.info("✅ Template inicial pendente enviado no horário comercial.", phone=lead.phone_number)
     except Exception as e:
         retry_at = fit_business_hours(now_utc() + timedelta(minutes=30))
@@ -310,4 +421,13 @@ async def _process_pending_welcome(lead: Lead) -> None:
             phone=lead.phone_number,
             error=str(e),
             retry_at=str(retry_at),
+        )
+        await notify_conversation_error(
+            source="followup.pending_welcome",
+            error=e,
+            phone=lead.phone_number,
+            lead_name=lead.name,
+            stage=lead.stage.value,
+            user_message="[welcome template pending]",
+            extra={"retry_at": str(retry_at)},
         )

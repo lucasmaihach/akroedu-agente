@@ -8,13 +8,14 @@ from app.agents.courses.curso_1_agent import Curso1Agent
 from app.agents.courses.curso_2_agent import Curso2Agent
 from app.agents.courses.pos_fisio_neuro_agent import PosFisioNeuroAgent
 from app.memory.session import update_lead_field
-from app.services import whatsapp, escalation
+from app.services import whatsapp
 from app.agents.courses.pos_fisio_neuro_faq import match_faq_response
 from app.utils.business_hours import is_within_business_hours, now_utc
+from app.jobs.store import schedule_faq_reply_resume
 
 logger = structlog.get_logger()
 
-NON_SCRIPT_RESPONSE_DELAY_SECONDS = 60
+FAQ_RESPONSE_DELAY_SECONDS = 60
 
 # Palavras que indicam que o lead está perguntando sobre preço
 _PRICE_KEYWORDS = [
@@ -33,13 +34,17 @@ def _looks_like_question(text: str) -> bool:
     if "?" in lower:
         return True
 
-    # Evita falso-positivo por substring (ex.: "certo" não deve casar com "é").
     tokens = [t for t in lower.replace("?", " ").split() if t]
     if not tokens:
         return False
 
-    question_starters = {"como", "quando", "quanto", "qual", "quais", "onde", "porque", "por", "tem", "funciona", "posso", "pode", "precisa"}
+    # Começos de pergunta mais confiáveis (evita falso positivo em frases afirmativas).
+    question_starters = {"como", "quando", "quanto", "qual", "quais", "onde", "porque", "funciona", "posso", "pode", "precisa"}
     if tokens[0] in question_starters:
+        return True
+
+    # "por" sozinho gera muito falso-positivo (ex: "por isso estou interessada").
+    if lower.startswith("por que") or lower.startswith("por quê"):
         return True
 
     strong_terms = {"cancelamento", "cancelar", "reembolso", "multa", "mensalidade", "preco", "preço", "valor"}
@@ -76,13 +81,6 @@ def _get_pending_engagement_question(lead: Lead, script: list[dict]) -> str | No
     return None
 
 
-async def _send_delayed_reply(lead: Lead, text: str) -> None:
-    """Simula atendimento humano: typing por 60s antes de responder."""
-    await whatsapp.send_typing_and_wait(
-        message_id=lead.last_received_msg_id or "",
-        duration_seconds=NON_SCRIPT_RESPONSE_DELAY_SECONDS,
-    )
-    await whatsapp.send_text(to=lead.phone_number, text=text)
 
 # Mapa de curso → agente instanciado
 AGENT_MAP = {
@@ -206,99 +204,43 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
     )
 
     # Enquanto o script estiver ativo (qualquer step antes do preço), a AI fica
-    # completamente silenciada — EXCETO quando o lead pergunta sobre preço.
+    # silenciada, com exceções controladas (FAQ e dúvidas pontuais).
     if script_active:
-        if _is_asking_price(user_message):
-            # Lead perguntou o preço durante o script
-            price_ask_count = lead.price_ask_count + 1
-            lead = await update_lead_field(lead.phone_number, price_ask_count=price_ask_count)
-
-            if price_ask_count == 1:
-                # Primeira vez: redireciona com leveza, aguarda resposta
-                # NÃO avança o script — aguarda a próxima resposta do lead
-                await whatsapp.send_text(
-                    to=lead.phone_number,
-                    text=(
-                        "Claro, saber o preço é super importante! 😊\n"
-                        "Posso te contar como funciona antes? "
-                        "Assim você consegue avaliar muito melhor se o investimento faz sentido pra você."
-                    ),
-                )
-                logger.info(
-                    "💰 Lead perguntou preço (1ª vez) — redirecionado, script pausado.",
-                    phone=lead.phone_number,
-                    step=lead.script_step,
-                )
-                return False  # não avança o script
-
-            else:
-                # Segunda vez ou mais: cede e pula para o bloco de detalhes do curso
-                await whatsapp.send_text(
-                    to=lead.phone_number,
-                    text="Claro, vou te explicar! 😊",
-                )
-                await update_lead_field(lead.phone_number, script_step=price_skip_to_step)
-                logger.info(
-                    "💰 Lead insistiu no preço (2ª vez) — pulando para bloco de preço.",
-                    phone=lead.phone_number,
-                    new_step=price_skip_to_step,
-                )
-                return True  # avança (agora está no bloco configurado)
-
         # FAQ controlado para POS Fisio Neuro durante script ativo (antes do preço).
-        # Se bater em intenção conhecida, responde com texto aprovado.
+        # Inclui perguntas de preço, que devem ser respondidas pelo FAQ e depois
+        # retomar o script automaticamente sem depender de nova resposta do lead.
         if course == CourseSlug.POS_FISIO_NEURO:
             faq_response, notify_human = match_faq_response(user_message)
             if faq_response:
-                await _send_delayed_reply(lead, faq_response)
+                await schedule_faq_reply_resume(
+                    phone=lead.phone_number,
+                    faq_response=faq_response,
+                    user_message=user_message,
+                    notify_human=notify_human,
+                    expected_script_step=lead.script_step,
+                    delay_seconds=FAQ_RESPONSE_DELAY_SECONDS,
+                )
 
-                pending_question = _get_pending_engagement_question(lead, current_script)
-                if pending_question:
-                    await whatsapp.send_text(to=lead.phone_number, text=pending_question)
-
-                if notify_human:
-                    await escalation.notify_human_only(
-                        lead=lead,
-                        reason="Pergunta sensível de FAQ (cancelamento/reembolso)",
-                        user_message=user_message,
-                    )
                 logger.info(
-
-                    "FAQ respondido durante script ativo; aguardando resposta de engajamento.",
+                    "FAQ detectado durante script ativo; resposta agendada com atraso e retomada automática do fluxo.",
                     phone=lead.phone_number,
                     step=lead.script_step,
+                    delay_seconds=FAQ_RESPONSE_DELAY_SECONDS,
                     notify_human=notify_human,
-                    pending_question=bool(pending_question),
                 )
 
                 return False
 
             # Só trata como FAQ não mapeado se realmente parecer pergunta.
-            # Evita fallback sem sentido em respostas normais do lead (ex.: "sou formado há 5 anos").
+            # Nesse caso, responde primeiro e depois segue o script normalmente.
             if _looks_like_question(user_message):
-                await _send_delayed_reply(
-                    lead,
-                    "Boa pergunta! Eu vou verificar certinho pra te responder com precisão e já te respondo 😊",
-                )
-
-                pending_question = _get_pending_engagement_question(lead, current_script)
-                if pending_question:
-                    await whatsapp.send_text(to=lead.phone_number, text=pending_question)
-
-                await escalation.notify_human_only(
-                    lead=lead,
-                    reason="Pergunta fora do FAQ durante script ativo",
-                    user_message=user_message,
-                )
+                await agent.get_response(lead=lead, user_message=user_message, script_active=True)
                 logger.info(
-
-                    "Pergunta fora do FAQ durante script ativo — humano notificado e aguardando resposta de engajamento.",
+                    "Pergunta fora do FAQ durante script ativo — resposta enviada e script segue.",
                     phone=lead.phone_number,
                     step=lead.script_step,
-                    pending_question=bool(pending_question),
                 )
-
-                return False
+                return True
 
             logger.info(
                 "Mensagem normal durante script ativo (sem FAQ) — avançando script.",
@@ -307,8 +249,31 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
             )
             return True
 
+        if _is_asking_price(user_message):
+            # Para cursos sem FAQ estruturado, mantém fallback de preço sem travar fluxo.
+            await whatsapp.send_text(
+                to=lead.phone_number,
+                text="Perfeito, já vou te explicar os valores no próximo passo 😊",
+            )
+            await update_lead_field(lead.phone_number, script_step=price_skip_to_step)
+            logger.info(
+                "💰 Lead perguntou preço durante script ativo (fallback sem FAQ) — seguindo fluxo sem depender de resposta.",
+                phone=lead.phone_number,
+                new_step=price_skip_to_step,
+            )
+            return True
+
+        if _looks_like_question(user_message):
+            await agent.get_response(lead=lead, user_message=user_message, script_active=True)
+            logger.info(
+                "Pergunta durante script ativo — respondida antes de avançar.",
+                phone=lead.phone_number,
+                step=lead.script_step,
+            )
+            return True
+
         logger.info(
-            "Script ativo: AI silenciada, avançando script.",
+            "Script ativo: mensagem coerente com fluxo, avançando script.",
             phone=lead.phone_number,
             step=lead.script_step,
         )

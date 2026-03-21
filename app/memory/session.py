@@ -2,6 +2,7 @@ import json
 import redis.asyncio as aioredis
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from typing import Optional, AsyncIterator
 
 from datetime import datetime, timezone
@@ -9,6 +10,8 @@ import uuid
 
 from app.config import settings
 from app.models.lead import Lead, LeadStage, CourseSlug
+from app.db.database import AsyncSessionLocal
+from app.db.orm_models import LeadORM
 
 logger = structlog.get_logger()
 
@@ -55,17 +58,124 @@ def _followup_lock_key(phone: str) -> str:
 
 # ── Gerenciamento do Lead em cache ────────────────────────────────────────────
 
+def _lead_from_orm(lead_orm: LeadORM) -> Lead:
+    """Converte registro do PostgreSQL para o modelo de domínio Lead."""
+    try:
+        course_slug = CourseSlug(lead_orm.course_slug)
+    except ValueError:
+        course_slug = CourseSlug.UNKNOWN
+
+    try:
+        stage = LeadStage(lead_orm.stage)
+    except ValueError:
+        stage = LeadStage.NEW
+
+    return Lead(
+        phone_number=lead_orm.phone_number,
+        name=lead_orm.name,
+        course_slug=course_slug,
+        stage=stage,
+        sprinthub_id=lead_orm.sprinthub_id,
+        script_step=lead_orm.script_step,
+        is_escalated=lead_orm.is_escalated,
+        price_ask_count=lead_orm.price_ask_count,
+        last_received_msg_id=lead_orm.last_received_msg_id,
+        notes=lead_orm.notes,
+        followup_enabled=lead_orm.followup_enabled,
+        followup_status=lead_orm.followup_status,
+        followup_scenario=lead_orm.followup_scenario,
+        followup_step=lead_orm.followup_step,
+        followup_next_at=lead_orm.followup_next_at,
+        followup_anchor_at=lead_orm.followup_anchor_at,
+        followup_started_at=lead_orm.followup_started_at,
+        followup_finished_at=lead_orm.followup_finished_at,
+        followup_stopped_reason=lead_orm.followup_stopped_reason,
+        last_inbound_at=lead_orm.last_inbound_at,
+        price_sent_at=lead_orm.price_sent_at,
+        last_unknown_prompt_at=lead_orm.last_unknown_prompt_at,
+        awaiting_template_reply=lead_orm.awaiting_template_reply,
+        pending_welcome_template=lead_orm.pending_welcome_template,
+        welcome_template_name=lead_orm.welcome_template_name,
+        welcome_next_at=lead_orm.welcome_next_at,
+    )
+
+
+async def _get_lead_postgres(phone: str) -> Optional[Lead]:
+    """Busca estado persistido do lead no PostgreSQL."""
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(LeadORM).where(LeadORM.phone_number == phone)
+            result = await session.execute(stmt)
+            lead_orm = result.scalar_one_or_none()
+            if not lead_orm:
+                return None
+            return _lead_from_orm(lead_orm)
+    except Exception as e:
+        logger.error("❌ Falha ao buscar lead no PostgreSQL.", phone=phone, error=str(e))
+        return None
+
+
+async def _save_lead_postgres(lead: Lead) -> None:
+    """Persiste estado completo do lead no PostgreSQL (fallback durável)."""
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(LeadORM).where(LeadORM.phone_number == lead.phone_number)
+            result = await session.execute(stmt)
+            lead_orm = result.scalar_one_or_none()
+
+            if lead_orm is None:
+                lead_orm = LeadORM(phone_number=lead.phone_number)
+                session.add(lead_orm)
+
+            lead_orm.name = lead.name
+            lead_orm.course_slug = lead.course_slug.value
+            lead_orm.stage = lead.stage.value
+            lead_orm.sprinthub_id = lead.sprinthub_id
+            lead_orm.script_step = lead.script_step
+            lead_orm.is_escalated = lead.is_escalated
+            lead_orm.price_ask_count = lead.price_ask_count
+            lead_orm.last_received_msg_id = lead.last_received_msg_id
+            lead_orm.notes = lead.notes
+
+            lead_orm.followup_enabled = lead.followup_enabled
+            lead_orm.followup_status = lead.followup_status
+            lead_orm.followup_scenario = lead.followup_scenario
+            lead_orm.followup_step = lead.followup_step
+            lead_orm.followup_next_at = lead.followup_next_at
+            lead_orm.followup_anchor_at = lead.followup_anchor_at
+            lead_orm.followup_started_at = lead.followup_started_at
+            lead_orm.followup_finished_at = lead.followup_finished_at
+            lead_orm.followup_stopped_reason = lead.followup_stopped_reason
+
+            lead_orm.last_inbound_at = lead.last_inbound_at
+            lead_orm.price_sent_at = lead.price_sent_at
+            lead_orm.last_unknown_prompt_at = lead.last_unknown_prompt_at
+
+            lead_orm.awaiting_template_reply = lead.awaiting_template_reply
+            lead_orm.pending_welcome_template = lead.pending_welcome_template
+            lead_orm.welcome_template_name = lead.welcome_template_name
+            lead_orm.welcome_next_at = lead.welcome_next_at
+
+            await session.commit()
+    except Exception as e:
+        logger.error("❌ Falha ao persistir lead no PostgreSQL.", phone=lead.phone_number, error=str(e))
+
+
 async def get_lead(phone: str) -> Optional[Lead]:
-    """Recupera o lead do Redis. Retorna None se não existir."""
+    """Recupera o lead do Redis e, se necessário, do PostgreSQL."""
     r = get_redis()
     data = await r.get(_lead_key(phone))
     if data:
         return Lead(**json.loads(data))
-    return None
+
+    lead = await _get_lead_postgres(phone)
+    if lead:
+        await save_lead(lead)
+    return lead
 
 
 async def save_lead(lead: Lead) -> None:
-    """Salva ou atualiza o lead no Redis com TTL."""
+    """Salva ou atualiza o lead no Redis e no PostgreSQL."""
     r = get_redis()
     ttl = settings.session_ttl_hours * 3600
     await r.set(
@@ -73,6 +183,7 @@ async def save_lead(lead: Lead) -> None:
         lead.model_dump_json(),
         ex=ttl,
     )
+    await _save_lead_postgres(lead)
 
 
 async def get_or_create_lead(phone: str, name: Optional[str] = None) -> Lead:
@@ -211,34 +322,93 @@ async def cache_media_id(filename: str, media_id: str) -> None:
 
 # ── Deduplicação de mensagens da Meta ─────────────────────────────────────────
 
+MSG_DEDUP_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 dias
+
+
 def _msg_seen_key(message_id: str) -> str:
     return f"msg_seen:{message_id}"
 
 
+async def _is_message_already_processed_postgres(message_id: str) -> bool:
+    """Deduplicação forte em persistência (PostgreSQL)."""
+    from app.db.database import AsyncSessionLocal
+    from app.db.orm_models import ProcessedMessageORM
+
+    async with AsyncSessionLocal() as session:
+        try:
+            session.add(ProcessedMessageORM(message_id=message_id))
+            await session.commit()
+            return False
+        except IntegrityError:
+            await session.rollback()
+            return True
+        except Exception as e:
+            await session.rollback()
+            logger.warning(
+                "Falha na deduplicação persistente do message_id.",
+                message_id=message_id,
+                error=str(e),
+            )
+            return False
+
+
 async def is_message_already_processed(message_id: str) -> bool:
     """
-    Verifica se uma mensagem já foi processada (evita duplo disparo da Meta).
-    Marca como processada com TTL de 5 minutos.
+    Verifica se uma mensagem já foi processada (evita reprocessamento por reentrega da Meta).
+
+    Estratégia em 2 camadas:
+    1) Redis (rápido, TTL longo de 30 dias)
+    2) PostgreSQL (persistente, sobrevive a restart/flush de Redis)
     """
     r = get_redis()
     key = _msg_seen_key(message_id)
-    # SETNX: só define se NÃO existir. Retorna True se acabou de criar (novo),
-    # False se já existia (duplicata).
-    result = await r.set(key, "1", nx=True, ex=300)  # TTL: 5 minutos
-    return result is None  # None = chave já existia = mensagem duplicada
+
+    cached = await r.set(key, "1", nx=True, ex=MSG_DEDUP_TTL_SECONDS)
+    if cached is None:
+        return True
+
+    already_in_db = await _is_message_already_processed_postgres(message_id)
+    if already_in_db:
+        await r.set(key, "1", ex=MSG_DEDUP_TTL_SECONDS)
+        return True
+
+    return False
+
+
+async def _iter_leads_postgres() -> AsyncIterator[Lead]:
+    """Itera por todos os leads persistidos no PostgreSQL."""
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(LeadORM))
+            for row in result.scalars().all():
+                try:
+                    yield _lead_from_orm(row)
+                except Exception as e:
+                    logger.warning("Lead inválido no PostgreSQL, ignorando.", phone=row.phone_number, error=str(e))
+    except Exception as e:
+        logger.error("❌ Falha ao iterar leads no PostgreSQL.", error=str(e))
 
 
 async def iter_leads() -> AsyncIterator[Lead]:
-    """Itera por todos os leads armazenados no Redis."""
+    """Itera por todos os leads disponíveis em Redis e PostgreSQL, sem duplicar."""
+    yielded: set[str] = set()
+
     r = get_redis()
     async for key in r.scan_iter(match="lead:*"):
         data = await r.get(key)
         if not data:
             continue
         try:
-            yield Lead(**json.loads(data))
+            lead = Lead(**json.loads(data))
+            yielded.add(lead.phone_number)
+            yield lead
         except Exception as e:
             logger.warning("Lead inválido no Redis, ignorando.", key=key, error=str(e))
+
+    async for lead in _iter_leads_postgres():
+        if lead.phone_number in yielded:
+            continue
+        yield lead
 
 
 async def acquire_followup_lock(phone: str, ttl_seconds: int = 30) -> Optional[str]:

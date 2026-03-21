@@ -68,3 +68,4 @@ htmlcov/
 # Secrets
 secrets.json
 .credentials
+context_session.md

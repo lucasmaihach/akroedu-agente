@@ -7,18 +7,17 @@ from app.config import settings
 from app.models.lead import Lead, LeadStage
 from app.memory.session import (
     get_history,
-    append_message,
     update_lead_field,
-    save_lead,
 )
 from app.services import whatsapp, escalation
 from app.services import crm
+from app.services.error_alert import notify_conversation_error
 
 logger = structlog.get_logger()
 
 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-NON_SCRIPT_RESPONSE_DELAY_SECONDS = 60
+NON_SCRIPT_RESPONSE_DELAY_SECONDS = 2  # Espera principal é controlada no webhook (janela de 2 min)
 
 
 class BaseAgent:
@@ -33,11 +32,12 @@ class BaseAgent:
     system_prompt: str = ""
 
     async def _simulate_typing(self, lead: Lead) -> None:
-        """Mostra typing por 60s antes das respostas fora do script."""
-        await whatsapp.send_typing_and_wait(
-            message_id=lead.last_received_msg_id or "",
-            duration_seconds=NON_SCRIPT_RESPONSE_DELAY_SECONDS,
-        )
+        """Mostra breve typing antes da resposta do agente."""
+        if NON_SCRIPT_RESPONSE_DELAY_SECONDS > 0:
+            await whatsapp.send_typing_and_wait(
+                message_id=lead.last_received_msg_id or "",
+                duration_seconds=NON_SCRIPT_RESPONSE_DELAY_SECONDS,
+            )
 
     def _build_system_prompt(self, lead: Lead, knowledge: str, script_active: bool = False) -> str:
         """
@@ -165,13 +165,10 @@ class BaseAgent:
         # 2. Atualiza o estágio do lead com base na mensagem
         lead = await self._detect_and_update_stage(lead, user_message)
 
-        # 3. Salva a mensagem do usuário no histórico
-        await append_message(lead.phone_number, role="user", content=user_message)
-
-        # 4. Monta o histórico para enviar ao Claude
+        # 3. Monta o histórico para enviar ao Claude
         history = await get_history(lead.phone_number, last_n=20)
 
-        # 5. Chama o Claude
+        # 4. Chama o Claude
         system = self._build_system_prompt(lead, knowledge, script_active=script_active)
         try:
             response = client.messages.create(
@@ -185,23 +182,42 @@ class BaseAgent:
             reply_text = response.content[0].text.strip()
         except Exception as e:
             logger.error("❌ Erro ao chamar Claude.", error=str(e))
+            await notify_conversation_error(
+                source="anthropic.reply",
+                error=e,
+                phone=lead.phone_number,
+                lead_name=lead.name,
+                stage=lead.stage.value,
+                user_message=user_message,
+                extra={"course": self.course_slug},
+            )
             reply_text = (
                 "Oi! Tive um probleminha aqui, mas já estou resolvendo. "
                 "Pode me mandar sua dúvida de novo? 😊"
             )
 
-        # 6. Salva a resposta no histórico
-        await append_message(lead.phone_number, role="assistant", content=reply_text)
+        # 5. Simula digitação e envia — divide em bolhas separadas por linha
+        try:
+            await self._simulate_typing(lead)
+            bubbles = [line for line in reply_text.split("\n") if line.strip()]
+            for i, bubble in enumerate(bubbles):
+                await whatsapp.send_text(to=lead.phone_number, text=bubble)
+                if i < len(bubbles) - 1:
+                    await asyncio.sleep(1.2)
+        except Exception as e:
+            logger.error("❌ Erro ao enviar resposta para o lead.", error=str(e), phone=lead.phone_number)
+            await notify_conversation_error(
+                source="whatsapp.send_text.agent_reply",
+                error=e,
+                phone=lead.phone_number,
+                lead_name=lead.name,
+                stage=lead.stage.value,
+                user_message=user_message,
+                extra={"reply_preview": reply_text[:120]},
+            )
+            return None
 
-        # 7. Simula digitação e envia — divide em bolhas separadas por linha
-        await self._simulate_typing(lead)
-        bubbles = [line for line in reply_text.split("\n") if line.strip()]
-        for i, bubble in enumerate(bubbles):
-            await whatsapp.send_text(to=lead.phone_number, text=bubble)
-            if i < len(bubbles) - 1:
-                await asyncio.sleep(1.2)
-
-        # 8. Sincroniza com CRM
+        # 6. Sincroniza com CRM
         await crm.sync_lead(lead)
 
         logger.info(

@@ -6,6 +6,7 @@ Parabéns! Você clonou o projeto. Agora vamos fazer funcionar em 5 minutos.
 
 ## ✅ Pré-requisitos
 
+- [ ] Python 3.11 instalado (`python3.11 --version`) para rodar scripts locais
 - [ ] Docker instalado (`docker --version`)
 - [ ] Docker Compose instalado (`docker-compose --version`)
 - [ ] Git clonado
@@ -156,7 +157,7 @@ bash test_webhook.sh http://localhost:8000 5511987654321
 ## 🚀 Passo 5: Teste o Agente
 
 ```bash
-python scripts/test_agents.py
+python3.11 scripts/test_agents.py
 ```
 
 Você vai ver uma conversa simulada com cada agente:
@@ -187,7 +188,7 @@ mkdir -p audios/curso_1 audios/curso_2 audios/pos_fisio_neuro
 # Coloque os .mp3 nas pastas
 
 # Faça upload
-python scripts/upload_audios.py
+python3.11 scripts/upload_audios.py
 ```
 
 Vai retornar media IDs. Copie e cole em:

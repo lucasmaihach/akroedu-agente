@@ -1,4 +1,10 @@
-.PHONY: help install setup up down logs test clean new-course
+PYTHON ?= python3.11
+
+.PHONY: help check-python install setup up down logs test clean new-course
+
+check-python:
+	@$(PYTHON) --version > /dev/null 2>&1 || (echo "❌ Python 3.11 não encontrado. Instale o Python 3.11 e/ou rode os comandos via Docker." && exit 1)
+	@$(PYTHON) --version
 
 help:
 	@echo "🤖 Sales Agent — Pós-Graduação"
@@ -25,8 +31,8 @@ help:
 	@echo "  make new-course slug=mba_direito name='MBA em Direito' consultant=Roberto"
 	@echo ""
 
-install:
-	pip install -r requirements.txt
+install: check-python
+	$(PYTHON) -m pip install -r requirements.txt
 
 setup:
 	@if [ ! -f .env ]; then \
@@ -59,19 +65,19 @@ shell-api:
 shell-postgres:
 	docker-compose exec postgres psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
 
-test:
-	pytest tests/ -v --tb=short
+test: check-python
+	$(PYTHON) -m pytest tests/ -v --tb=short
 
 test-webhook:
 	chmod +x test_webhook.sh
 	./test_webhook.sh http://localhost:8000 5511999999999
 
-test-agents:
-	python scripts/test_agents.py
+test-agents: check-python
+	$(PYTHON) scripts/test_agents.py
 
-upload-audios:
+upload-audios: check-python
 	@which ffmpeg > /dev/null 2>&1 || (echo "❌ ffmpeg não encontrado. Instale: brew install ffmpeg (macOS) ou apt install ffmpeg (Ubuntu)" && exit 1)
-	python scripts/upload_audios.py
+	$(PYTHON) scripts/upload_audios.py
 
 clean:
 	docker-compose down -v
@@ -92,15 +98,15 @@ backup-db:
 migrate:
 	docker-compose exec api alembic upgrade head
 
-version:
-	docker-compose exec api python -c "import app; print('Sales Agent v1.0.0')"
+version: check-python
+	$(PYTHON) -c "import app; print('Sales Agent v1.0.0')"
 
 new-course:
 	@if [ -z "$(slug)" ] || [ -z "$(name)" ]; then \
 		echo "❌ Uso: make new-course slug=meu_curso name='Nome do Curso' consultant='Nome'"; \
 		exit 1; \
 	fi
-	python scripts/create_course.py --slug "$(slug)" --name "$(name)" --consultant "$(or $(consultant),[Consultor])"
+	$(PYTHON) scripts/create_course.py --slug "$(slug)" --name "$(name)" --consultant "$(or $(consultant),[Consultor])"
 
 reset-lead:
 	@if [ -z "$(phone)" ]; then \

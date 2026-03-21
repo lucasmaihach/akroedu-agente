@@ -1,6 +1,8 @@
 import asyncio
 import structlog
+from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from app.models.lead import Lead, CourseSlug
 from app.memory.session import (
@@ -16,6 +18,8 @@ from app.script.schedules.curso_1_script import CURSO_1_SCRIPT, CURSO_1_CONFIG
 from app.script.schedules.curso_2_script import CURSO_2_SCRIPT, CURSO_2_CONFIG
 from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT, POS_FISIO_NEURO_CONFIG
 from app.followup.service import arm_followup_waiting_reply, mark_price_sent
+from app.services.error_alert import notify_conversation_error
+from app.utils.business_hours import fit_business_hours, is_within_business_hours, now_utc
 
 logger = structlog.get_logger()
 
@@ -32,6 +36,38 @@ async def _send_text_bubbles(phone: str, text, delay_between: float = 1.2, msg_i
         await whatsapp.send_text(to=phone, text=item)
         if i < len(items) - 1:
             await asyncio.sleep(delay_between)
+
+
+def _audio_history_label(audio: str) -> str:
+    """Gera rótulo amigável do áudio para exibição no painel."""
+    if audio.startswith("http"):
+        name = Path(urlparse(audio).path).name or "audio_url"
+        return f"[áudio enviado] {name}"
+    if "." in audio:
+        return f"[áudio enviado] {audio}"
+    short_media = f"{audio[:12]}..." if len(audio) > 12 else audio
+    return f"[áudio enviado] media_id={short_media}"
+
+
+def _filter_orphan_media_teaser(text_or_list, has_media_assets: bool):
+    """Remove frases que prometem mídia quando o passo não possui mídia configurada."""
+    if has_media_assets or not text_or_list:
+        return text_or_list
+
+    def _is_orphan_teaser(line: str) -> bool:
+        lower = line.lower()
+        mentions_send = ("vou te mandar" in lower) or ("vou mandar" in lower)
+        mentions_media = any(k in lower for k in ["notícia", "noticias", "notícia", "imagem", "foto", "print", "arquivo"])
+        return mentions_send and mentions_media
+
+    if isinstance(text_or_list, list):
+        filtered = [line for line in text_or_list if not _is_orphan_teaser(str(line))]
+        return filtered or None
+
+    if isinstance(text_or_list, str) and _is_orphan_teaser(text_or_list):
+        return None
+
+    return text_or_list
 
 
 async def _send_image(phone: str, image: str) -> None:
@@ -86,6 +122,18 @@ async def _retry_script_step_after_lock(phone: str, attempts: int = 6, interval_
     logger.info("ℹ️ Re-tentativas após lock encerradas sem novo envio.", phone=phone)
 
 
+async def _run_script_when_business_opens(phone: str, wait_seconds: float) -> None:
+    """Reagenda execução de script para o próximo horário comercial."""
+    try:
+        await asyncio.sleep(wait_seconds)
+        # Libera o lock de reagendamento e executa normalmente.
+        await release_script_lock(phone)
+        await run_script_step(phone, retry_on_lock=False)
+    except Exception as e:
+        logger.error("❌ Falha no reagendamento de script para horário comercial.", phone=phone, error=str(e))
+        await release_script_lock(phone)
+
+
 async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
     """
     Executa o próximo passo do script de áudios para o lead.
@@ -100,6 +148,16 @@ async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
     if lead.is_escalated:
         return False
 
+    # Não inicia script antes da resposta ao template inicial.
+    if lead.awaiting_template_reply or lead.pending_welcome_template:
+        logger.info(
+            "⏸️ Script bloqueado aguardando resposta ao template inicial.",
+            phone=phone,
+            awaiting_template_reply=lead.awaiting_template_reply,
+            pending_welcome_template=lead.pending_welcome_template,
+        )
+        return False
+
     script = SCRIPTS.get(lead.course_slug)
     if script is None:
         logger.warning("Script não encontrado para o curso.", course=lead.course_slug)
@@ -110,6 +168,28 @@ async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
     # Script finalizado
     if step_index >= len(script):
         logger.info("✅ Script finalizado.", phone=phone, course=lead.course_slug)
+        return False
+
+    # Fora do horário comercial: reagenda para próxima janela útil.
+    current_time = now_utc()
+    if not is_within_business_hours(current_time):
+        next_at = fit_business_hours(current_time)
+        wait_seconds = max(1.0, (next_at - current_time).total_seconds())
+        lock_ttl = max(180, int(wait_seconds) + 120)
+        scheduled = await set_script_lock(phone, ttl_seconds=lock_ttl)
+
+        if scheduled:
+            logger.info(
+                "🕒 Script fora do horário comercial — reagendado.",
+                phone=phone,
+                step=step_index,
+                next_at=str(next_at),
+                wait_seconds=int(wait_seconds),
+            )
+            asyncio.create_task(_run_script_when_business_opens(phone, wait_seconds))
+        else:
+            logger.info("🕒 Script já possui reagendamento ativo fora do horário.", phone=phone, step=step_index)
+
         return False
 
     # Tenta adquirir o lock para evitar duplo disparo
@@ -167,14 +247,17 @@ async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
                     await asyncio.sleep(1.2)
             await asyncio.sleep(1.5)
 
+        images_before = step.get("images") or []
+        images_after = step.get("images_post") or []
+        has_media_assets = bool(images_before or images_after or step.get("audio"))
+
         # Envia mensagem de texto pré-passo (opcional) — suporta str ou list[str]
-        pre_text = step.get("pre_text")
+        pre_text = _filter_orphan_media_teaser(step.get("pre_text"), has_media_assets)
         if pre_text:
             await _send_text_bubbles(phone, pre_text, msg_id=msg_id)
             await asyncio.sleep(1.5)
 
         # Envia imagens ANTES do áudio (notícias, prints, etc.)
-        images_before = step.get("images") or []
         for img in images_before:
             await _send_image(phone, img)
             await asyncio.sleep(1.5)
@@ -199,7 +282,11 @@ async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
 
             if audio.startswith("http"):
                 # URL externa — envia diretamente por link
-                await whatsapp.send_audio_by_url(to=phone, audio_url=audio)
+                await whatsapp.send_audio_by_url(
+                    to=phone,
+                    audio_url=audio,
+                    history_label=_audio_history_label(audio),
+                )
             elif "." in audio:
                 # Arquivo local — faz upload para a Meta (com cache no Redis)
                 # Isso garante que apareça como PTT com ondas de voz no WhatsApp
@@ -210,10 +297,18 @@ async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
                     media_id = await whatsapp.upload_audio(local_path)
                     await cache_media_id(audio, media_id)
                     logger.info("✅ Upload concluído e media_id em cache.", file=audio, media_id=media_id)
-                await whatsapp.send_audio_by_media_id(to=phone, media_id=media_id)
+                await whatsapp.send_audio_by_media_id(
+                    to=phone,
+                    media_id=media_id,
+                    history_label=_audio_history_label(audio),
+                )
             else:
                 # Já é um media_id hospedado na Meta
-                await whatsapp.send_audio_by_media_id(to=phone, media_id=audio)
+                await whatsapp.send_audio_by_media_id(
+                    to=phone,
+                    media_id=audio,
+                    history_label=_audio_history_label(audio),
+                )
 
             await asyncio.sleep(1.5)
 
@@ -224,7 +319,6 @@ async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
             await asyncio.sleep(1.5)
 
         # Envia imagens APÓS o áudio (diploma, certificados, etc.)
-        images_after = step.get("images_post") or []
         for img in images_after:
             await _send_image(phone, img)
             await asyncio.sleep(1.5)
@@ -281,6 +375,15 @@ async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
 
     except Exception as e:
         logger.error("❌ Erro ao executar passo do script.", phone=phone, step=step_index, error=str(e))
+        await notify_conversation_error(
+            source="script.run_step",
+            error=e,
+            phone=phone,
+            lead_name=lead.name if lead else None,
+            stage=lead.stage.value if lead else None,
+            user_message="[script execution]",
+            extra={"step": step_index, "course": lead.course_slug.value if lead else "unknown"},
+        )
         return False
 
     finally:

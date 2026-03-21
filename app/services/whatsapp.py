@@ -1,6 +1,10 @@
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
 import httpx
 import structlog
-from pathlib import Path
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import settings
@@ -31,22 +35,131 @@ def _normalize_phone(phone: str) -> str:
     return "".join(ch for ch in phone if ch.isdigit())
 
 
+OUTBOUND_DEDUP_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 dias
+OUTBOUND_DEDUP_LOCK_TTL_SECONDS = 120
+
+
+def _outbound_done_key(dedup_key: str) -> str:
+    return f"outbound:done:{dedup_key}"
+
+
+def _outbound_lock_key(dedup_key: str) -> str:
+    return f"outbound:lock:{dedup_key}"
+
+
+def _extract_meta_message_id(response_payload: dict | None) -> str | None:
+    if not isinstance(response_payload, dict):
+        return None
+
+    messages = response_payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return None
+
+    first = messages[0]
+    if not isinstance(first, dict):
+        return None
+
+    msg_id = first.get("id")
+    return msg_id if isinstance(msg_id, str) and msg_id else None
+
+
+async def _begin_outbound_send(dedup_key: str | None) -> tuple[str | None, dict | None]:
+    if not dedup_key:
+        return None, None
+
+    from app.memory.session import get_redis
+
+    redis = get_redis()
+    done_key = _outbound_done_key(dedup_key)
+    lock_key = _outbound_lock_key(dedup_key)
+
+    if await redis.get(done_key):
+        return None, {"status": "skipped", "reason": "idempotency_duplicate", "dedup_key": dedup_key}
+
+    lock_token = str(uuid4())
+    acquired = await redis.set(lock_key, lock_token, nx=True, ex=OUTBOUND_DEDUP_LOCK_TTL_SECONDS)
+    if not acquired:
+        raise RuntimeError(f"outbound_inflight:{dedup_key}")
+
+    if await redis.get(done_key):
+        await _release_outbound_lock(dedup_key, lock_token)
+        return None, {"status": "skipped", "reason": "idempotency_duplicate", "dedup_key": dedup_key}
+
+    return lock_token, None
+
+
+async def _mark_outbound_sent(dedup_key: str, response_payload: dict | None) -> None:
+    from app.memory.session import get_redis
+
+    redis = get_redis()
+    data = {
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+        "meta_message_id": _extract_meta_message_id(response_payload),
+    }
+    await redis.set(
+        _outbound_done_key(dedup_key),
+        json.dumps(data, ensure_ascii=False),
+        ex=OUTBOUND_DEDUP_TTL_SECONDS,
+    )
+
+
+async def _release_outbound_lock(dedup_key: str, lock_token: str) -> None:
+    from app.memory.session import get_redis
+
+    redis = get_redis()
+    key = _outbound_lock_key(dedup_key)
+    current = await redis.get(key)
+    if current and current == lock_token:
+        await redis.delete(key)
+
+
+async def _append_assistant_history(phone: str, content: str) -> None:
+    """Registra outbound no histórico de conversa."""
+    try:
+        from app.memory.session import append_message
+
+        await append_message(phone, role="assistant", content=content)
+    except Exception as e:
+        logger.warning("⚠️ Falha ao registrar outbound no histórico.", phone=phone, error=str(e))
+
+
+async def record_outbound_event(phone: str, content: str) -> None:
+    """API pública para registrar eventos outbound customizados no histórico."""
+    phone = _normalize_phone(phone)
+    await _append_assistant_history(phone, content)
+
+
 # ── Envio de mensagens ────────────────────────────────────────────────────────
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def send_text(to: str, text: str) -> dict:
+async def send_text(to: str, text: str, dedup_key: str | None = None) -> dict:
     """Envia uma mensagem de texto simples."""
     to = _normalize_phone(to)
-    payload = {
-        **_base_payload(to),
-        "type": "text",
-        "text": {"body": text, "preview_url": False},
-    }
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
-        resp.raise_for_status()
-        logger.info("📤 Texto enviado.", to=to, preview=text[:60])
-        return resp.json()
+    lock_token: str | None = None
+
+    try:
+        lock_token, skipped = await _begin_outbound_send(dedup_key)
+        if skipped:
+            logger.info("⏭️ Texto outbound deduplicado.", to=to, dedup_key=dedup_key)
+            return skipped
+
+        payload = {
+            **_base_payload(to),
+            "type": "text",
+            "text": {"body": text, "preview_url": False},
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+            resp.raise_for_status()
+            body = resp.json()
+            if dedup_key:
+                await _mark_outbound_sent(dedup_key, body)
+            logger.info("📤 Texto enviado.", to=to, preview=text[:60])
+            await _append_assistant_history(to, text)
+            return body
+    finally:
+        if dedup_key and lock_token:
+            await _release_outbound_lock(dedup_key, lock_token)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -55,6 +168,7 @@ async def send_template(
     template_name: str,
     language_code: str = "pt_BR",
     body_params: list[str] | None = None,
+    dedup_key: str | None = None,
 ) -> dict:
     """
     Envia mensagem template (HSM), usada para outbound fora da janela de 24h.
@@ -82,27 +196,45 @@ async def send_template(
     if components:
         template_payload["components"] = components
 
-    payload = {
-        **_base_payload(to),
-        "type": "template",
-        "template": template_payload,
-    }
+    lock_token: str | None = None
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
-        resp.raise_for_status()
-        logger.info(
-            "📤 Template enviado.",
-            to=to,
-            template=template_name,
-            language=language_code,
-            params_count=len(body_params or []),
-        )
-        return resp.json()
+    try:
+        lock_token, skipped = await _begin_outbound_send(dedup_key)
+        if skipped:
+            logger.info("⏭️ Template outbound deduplicado.", to=to, dedup_key=dedup_key, template=template_name)
+            return skipped
+
+        payload = {
+            **_base_payload(to),
+            "type": "template",
+            "template": template_payload,
+        }
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+            resp.raise_for_status()
+            body = resp.json()
+            if dedup_key:
+                await _mark_outbound_sent(dedup_key, body)
+            logger.info(
+                "📤 Template enviado.",
+                to=to,
+                template=template_name,
+                language=language_code,
+                params_count=len(body_params or []),
+            )
+            template_preview = f"[template] {template_name}"
+            if body_params:
+                template_preview += f" | params: {' | '.join(body_params)}"
+            await _append_assistant_history(to, template_preview)
+            return body
+    finally:
+        if dedup_key and lock_token:
+            await _release_outbound_lock(dedup_key, lock_token)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def send_audio_by_url(to: str, audio_url: str) -> dict:
+async def send_audio_by_url(to: str, audio_url: str, history_label: str | None = "[áudio enviado]") -> dict:
     """
     Envia um áudio a partir de uma URL pública como mensagem de voz (PTT).
     Aparece com ondas de voz no WhatsApp, igual a um áudio gravado pelo celular.
@@ -117,11 +249,13 @@ async def send_audio_by_url(to: str, audio_url: str) -> dict:
         resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
         resp.raise_for_status()
         logger.info("🎤 Áudio PTT enviado por URL.", to=to, url=audio_url)
+        if history_label:
+            await _append_assistant_history(to, history_label)
         return resp.json()
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def send_audio_by_media_id(to: str, media_id: str) -> dict:
+async def send_audio_by_media_id(to: str, media_id: str, history_label: str | None = "[áudio enviado]") -> dict:
     """
     Envia um áudio usando um media_id já hospedado na Meta como mensagem de voz (PTT).
     Aparece com ondas de voz no WhatsApp, igual a um áudio gravado pelo celular.
@@ -136,6 +270,8 @@ async def send_audio_by_media_id(to: str, media_id: str) -> dict:
         resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
         resp.raise_for_status()
         logger.info("🎤 Áudio PTT enviado por media_id.", to=to, media_id=media_id)
+        if history_label:
+            await _append_assistant_history(to, history_label)
         return resp.json()
 
 
@@ -227,6 +363,8 @@ async def send_image_by_media_id(to: str, media_id: str, caption: str = "") -> d
         resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
         resp.raise_for_status()
         logger.info("🖼 Imagem enviada por media_id.", to=to, media_id=media_id)
+        caption_preview = f"[imagem enviada] {caption}".strip()
+        await _append_assistant_history(to, caption_preview)
         return resp.json()
 
 
@@ -245,6 +383,8 @@ async def send_image_by_url(to: str, image_url: str, caption: str = "") -> dict:
         resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
         resp.raise_for_status()
         logger.info("🖼 Imagem enviada por URL.", to=to, url=image_url)
+        caption_preview = f"[imagem enviada] {caption}".strip()
+        await _append_assistant_history(to, caption_preview)
         return resp.json()
 
 

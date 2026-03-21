@@ -4,6 +4,13 @@ Comece com o Sales Agent em 10 minutos!
 
 ---
 
+## ✅ Requisito de versão Python
+
+Use **Python 3.11** para execução local dos scripts/pytest.
+(Com Docker, o container já usa 3.11.)
+
+---
+
 ## 1️⃣ Clone o Repositório
 
 ```bash
@@ -147,7 +154,7 @@ Faça o mesmo em `curso_2.md`.
 ## 9️⃣ Teste os Agentes
 
 ```bash
-python scripts/test_agents.py
+python3.11 scripts/test_agents.py
 ```
 
 Você vai ver uma conversa simulada com cada agente.
@@ -168,7 +175,7 @@ Agora você pode:
 ## 📚 Próximos Passos
 
 1. **Gravar áudios** → `SETUP_AUDIOS.md`
-2. **Fazer upload** → `python scripts/upload_audios.py`
+2. **Fazer upload** → `python3.11 scripts/upload_audios.py`
 3. **Personalizar agentes** → `AGENT_TRAINING.md`
 4. **Deploy em produção** → `DEPLOYMENT.md`
 5. **Checklist final** → `PREPRODUCTION_CHECKLIST.md`

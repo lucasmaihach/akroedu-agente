@@ -3,18 +3,22 @@ import structlog
 from fastapi import APIRouter, Request, HTTPException
 
 from app.config import settings
-from app.models.lead import LeadStage
+from app.models.lead import CourseSlug, LeadStage
 from app.models.message import MetaWebhookPayload
-from app.memory.session import get_or_create_lead, is_message_already_processed
-from app.agents.dispatcher import dispatch
-from app.script.engine import run_script_step
+from app.memory.session import append_message, get_or_create_lead, is_message_already_processed
 from app.services import whatsapp
 from app.services.transcription import transcribe_audio
 from app.followup.service import stop_followup_on_inbound
+from app.services.error_alert import notify_conversation_error
+from app.utils.business_hours import is_within_business_hours, now_utc
+from app.jobs.store import schedule_debounce_inbound
 
 logger = structlog.get_logger()
 
 router = APIRouter()
+
+INBOUND_ANALYSIS_DELAY_SECONDS = 30
+
 
 
 def _log_status_updates(value) -> None:
@@ -45,6 +49,15 @@ def _log_status_updates(value) -> None:
                 recipient=recipient_id,
                 timestamp=timestamp,
                 errors=errors,
+            )
+            asyncio.create_task(
+                notify_conversation_error(
+                    source="meta.delivery_failed",
+                    error=f"msg_id={msg_id} errors={errors}",
+                    phone=recipient_id,
+                    user_message="[outbound delivery failed]",
+                    extra={"status": status, "timestamp": timestamp},
+                )
             )
         else:
             logger.info(
@@ -141,7 +154,12 @@ async def _handle_incoming_message(msg, value) -> None:
             # Baixa o áudio da Meta e transcreve via Groq Whisper
             try:
                 audio_bytes, mime_type = await whatsapp.download_media(msg.audio.id)
-                transcription = await transcribe_audio(audio_bytes, mime_type)
+                transcription = await transcribe_audio(
+                    audio_bytes,
+                    mime_type,
+                    phone=phone_number,
+                    lead_name=contact_name,
+                )
                 if transcription:
                     text = f"[áudio]: {transcription}"
                     logger.info(
@@ -154,10 +172,23 @@ async def _handle_incoming_message(msg, value) -> None:
                         "⚠️ Transcrição falhou — áudio ignorado.",
                         phone=phone_number,
                     )
-                    await whatsapp.send_text(
-                        to=phone_number,
-                        text="Desculpa, não consegui ouvir bem. Pode mandar novamente? 😊"
+                    await notify_conversation_error(
+                        source="groq.transcription.empty",
+                        error="Transcrição retornou vazia/None",
+                        phone=phone_number,
+                        lead_name=contact_name,
+                        user_message="[áudio inbound]",
                     )
+                    if is_within_business_hours(now_utc()):
+                        await whatsapp.send_text(
+                            to=phone_number,
+                            text="Desculpa, não consegui ouvir bem. Pode mandar novamente? 😊"
+                        )
+                    else:
+                        logger.info(
+                            "🌙 Mensagem de falha de transcrição suprimida por fora do horário.",
+                            phone=phone_number,
+                        )
                     return
             except Exception as e:
                 logger.error(
@@ -165,16 +196,34 @@ async def _handle_incoming_message(msg, value) -> None:
                     phone=phone_number,
                     error=str(e),
                 )
+                await notify_conversation_error(
+                    source="webhook.audio_processing",
+                    error=e,
+                    phone=phone_number,
+                    lead_name=contact_name,
+                    user_message="[áudio inbound]",
+                    extra={"message_type": message_type},
+                )
                 return
 
         else:
             # Outros tipos (imagem, vídeo, sticker, etc.) — ignora por enquanto
             logger.info("Mensagem ignorada (tipo não suportado).", type=message_type)
-            await whatsapp.send_text(
-                to=phone_number,
-                text="Entendi! Por enquanto só consigo processar mensagens de texto e áudio. Pode escrever ou mandar um áudio? 😊"
-            )
+            if is_within_business_hours(now_utc()):
+                await whatsapp.send_text(
+                    to=phone_number,
+                    text="Entendi! Por enquanto só consigo processar mensagens de texto e áudio. Pode escrever ou mandar um áudio? 😊"
+                )
+            else:
+                logger.info(
+                    "🌙 Mensagem de tipo não suportado suprimida por fora do horário.",
+                    phone=phone_number,
+                    type=message_type,
+                )
             return
+
+        # Registra a mensagem inbound no histórico (Redis + PostgreSQL)
+        await append_message(phone_number, role="user", content=text)
 
         # Obtém ou cria o lead e salva o ID da mensagem recebida (usado para typing indicator)
         from app.memory.session import update_lead_field as _upd
@@ -191,21 +240,47 @@ async def _handle_incoming_message(msg, value) -> None:
 
         lead = await _upd(phone_number, **update_kwargs)
 
+        # Regra operacional: IA só atua para leads com produto/curso mapeado.
+        # Se o lead não tiver produto válido, não entra no fluxo do agente.
+        if lead.course_slug == CourseSlug.UNKNOWN:
+            now = now_utc()
+            should_notify_block = (
+                not lead.last_unknown_prompt_at
+                or (now - lead.last_unknown_prompt_at).total_seconds() > 24 * 3600
+            )
+            if should_notify_block and is_within_business_hours(now):
+                await whatsapp.send_text(
+                    to=phone_number,
+                    text=(
+                        "Oi! Este canal atende somente leads dos nossos produtos ativos. "
+                        "Se você recebeu este número por engano, me avise que direciono ao time correto. 🙂"
+                    ),
+                )
+                await _upd(phone_number, last_unknown_prompt_at=now)
+
+            logger.info(
+                "🚫 Lead sem produto mapeado: fluxo da IA bloqueado.",
+                phone=phone_number,
+                stage=lead.stage.value,
+            )
+            return
+
         # Qualquer inbound interrompe imediatamente a régua de follow-up.
         await stop_followup_on_inbound(lead=lead, user_message=text or "")
 
-        # Recarrega lead atualizado antes de seguir o fluxo principal.
-        lead = await get_or_create_lead(phone=phone_number, name=contact_name)
-
-        # Dispara o agente para responder
-        # (o histórico da mensagem do usuário é salvo dentro de dispatch/agent)
-        # dispatch() retorna True se o script deve avançar, False se ele foi pausado
-        # (ex: quando intercepta pergunta de preço na 1ª vez)
-        should_advance_script = await dispatch(lead=lead, user_message=text)
-
-        # Agenda o próximo passo do script apenas se o dispatch autorizou
-        if should_advance_script:
-            asyncio.create_task(run_script_step(phone_number))
+        # Debounce persistente: sobrevive restart e preserva janela de análise de 30s.
+        await schedule_debounce_inbound(
+            phone=phone_number,
+            contact_name=contact_name,
+            message_text=text or "",
+            delay_seconds=INBOUND_ANALYSIS_DELAY_SECONDS,
+        )
 
     except Exception as e:
         logger.error("❌ Erro ao processar mensagem.", error=str(e), exc_info=True)
+        await notify_conversation_error(
+            source="webhook.handle_incoming",
+            error=e,
+            phone=getattr(msg, "from_", None),
+            user_message="[inbound processing]",
+        )

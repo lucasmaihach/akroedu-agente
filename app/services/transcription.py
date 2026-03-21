@@ -13,13 +13,20 @@ import structlog
 import httpx
 
 from app.config import settings
+from app.services.error_alert import notify_conversation_error
 
 logger = structlog.get_logger()
 
 GROQ_TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 
-async def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str | None:
+async def transcribe_audio(
+    audio_bytes: bytes,
+    mime_type: str = "audio/ogg",
+    *,
+    phone: str | None = None,
+    lead_name: str | None = None,
+) -> str | None:
     """
     Transcreve um arquivo de áudio usando Groq Whisper.
 
@@ -77,7 +84,23 @@ async def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg") -> 
             status=e.response.status_code,
             body=e.response.text[:200],
         )
+        await notify_conversation_error(
+            source="groq.transcription.http",
+            error=f"status={e.response.status_code} body={e.response.text[:200]}",
+            phone=phone,
+            lead_name=lead_name,
+            user_message="[áudio inbound]",
+            extra={"mime_type": mime_type},
+        )
         return None
     except Exception as e:
         logger.error("❌ Erro inesperado na transcrição.", error=str(e))
+        await notify_conversation_error(
+            source="groq.transcription.unexpected",
+            error=e,
+            phone=phone,
+            lead_name=lead_name,
+            user_message="[áudio inbound]",
+            extra={"mime_type": mime_type},
+        )
         return None

@@ -1,6 +1,7 @@
 import json
 import re
 import unicodedata
+from datetime import timedelta
 from typing import Any
 
 import structlog
@@ -16,6 +17,8 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 WELCOME_TEMPLATE_NAME = "boas_vindas_fisio"
+PRE_PRICE_SCENARIO = "pre_price"
+PRE_PRICE_FIRST_FOLLOWUP_HOURS = 2
 
 
 def _unwrap_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -334,6 +337,7 @@ async def receive_sprinthub_webhook(
         is_escalated=False,
         price_ask_count=0,
         followup_status="idle",
+        followup_scenario=None,
         followup_step=0,
         followup_next_at=None,
         followup_anchor_at=None,
@@ -374,11 +378,15 @@ async def receive_sprinthub_webhook(
             "crm_snapshot": crm_snapshot,
         }
 
+    outbound_ref = sprinthub_opportunity_id or sprinthub_lead_id or phone
+    welcome_dedup_key = f"crm_welcome:{phone}:{course.value}:{outbound_ref}:{WELCOME_TEMPLATE_NAME}"
+
     try:
         await whatsapp.send_template(
             to=phone,
             template_name=WELCOME_TEMPLATE_NAME,
             language_code="pt_BR",
+            dedup_key=welcome_dedup_key,
         )
     except Exception as e:
         logger.error(
@@ -394,6 +402,21 @@ async def receive_sprinthub_webhook(
             "template": WELCOME_TEMPLATE_NAME,
         }
 
+    followup_updates = {}
+    if course == CourseSlug.POS_FISIO_NEURO:
+        activation_now = now_utc()
+        first_followup_at = fit_business_hours(activation_now + timedelta(hours=PRE_PRICE_FIRST_FOLLOWUP_HOURS))
+        followup_updates = {
+            "followup_status": "running",
+            "followup_scenario": PRE_PRICE_SCENARIO,
+            "followup_step": 0,
+            "followup_anchor_at": activation_now,
+            "followup_started_at": activation_now,
+            "followup_finished_at": None,
+            "followup_stopped_reason": None,
+            "followup_next_at": first_followup_at,
+        }
+
     lead = await update_lead_field(
         phone,
         awaiting_template_reply=True,
@@ -401,6 +424,7 @@ async def receive_sprinthub_webhook(
         welcome_template_name=None,
         welcome_next_at=None,
         **common_updates,
+        **followup_updates,
     )
 
     logger.info(

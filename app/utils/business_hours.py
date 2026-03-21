@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 BRT = ZoneInfo("America/Sao_Paulo")
-START_HOUR = 7
-END_HOUR = 22
+START_HOUR = 8
+END_HOUR = 20
 
 
 def now_utc() -> datetime:

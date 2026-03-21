@@ -36,7 +36,7 @@ WhatsApp (Lead)
 
 ## 📋 Pré-requisitos
 
-- **Python 3.11+**
+- **Python 3.11.x (obrigatório)**
 - **Docker & Docker Compose** (para dev local)
 - **Conta Meta/WhatsApp Business** com API oficial configurada
 - **API Key da Anthropic (Claude)**
@@ -261,20 +261,20 @@ CURSO_1_SCRIPT = [
 
 ```bash
 # Instale as dependências
-pip install -r requirements.txt
+python3.11 -m pip install -r requirements.txt
 
 # Crie um .env com as variáveis
 # (Redis e PostgreSQL rodando localmente ou docker-compose up)
 
 # Rode a aplicação
-uvicorn app.main:app --reload
+python3.11 -m uvicorn app.main:app --reload
 ```
 
 ### Testando o webhook localmente
 
 ```bash
 # Terminal 1: Rodando a app
-uvicorn app.main:app --reload
+python3.11 -m uvicorn app.main:app --reload
 
 # Terminal 2: Usando ngrok
 ngrok http 8000

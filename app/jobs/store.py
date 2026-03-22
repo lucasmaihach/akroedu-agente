@@ -29,6 +29,7 @@ async def schedule_debounce_inbound(
     contact_name: str | None,
     message_text: str,
     delay_seconds: int,
+    script_step: int | None = None,
 ) -> None:
     """Acumula mensagens inbound em um job persistente de debounce."""
     inbound_at = _db_now()
@@ -56,6 +57,10 @@ async def schedule_debounce_inbound(
             payload["messages"] = messages
             payload["contact_name"] = contact_name
             payload["last_inbound_at"] = inbound_at.isoformat()
+            # Não sobrescreve o script_step original — preserva o step
+            # do momento em que a janela de debounce foi aberta.
+            if "script_step" not in payload and script_step is not None:
+                payload["script_step"] = script_step
 
             current.payload = json.dumps(payload, ensure_ascii=False)
             current.run_at = run_at
@@ -66,6 +71,7 @@ async def schedule_debounce_inbound(
                 "contact_name": contact_name,
                 "messages": [message_text.strip()] if message_text and message_text.strip() else [],
                 "last_inbound_at": inbound_at.isoformat(),
+                "script_step": script_step,
             }
             session.add(
                 PendingJobORM(

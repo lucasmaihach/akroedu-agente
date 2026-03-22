@@ -299,6 +299,7 @@ async def _handle_incoming_message(msg, value) -> None:
             contact_name=contact_name,
             message_text=text or "",
             delay_seconds=INBOUND_ANALYSIS_DELAY_SECONDS,
+            script_step=lead.script_step,
         )
 
     except Exception as e:

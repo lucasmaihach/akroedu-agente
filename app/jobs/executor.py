@@ -112,7 +112,22 @@ async def _execute_debounce_inbound(job_id: int, phone: str, payload: dict) -> N
 
     should_advance_script, acolhimento_text = await dispatch(lead=lead, user_message=merged_text)
     if should_advance_script:
-        await run_script_step(phone, acolhimento_override=acolhimento_text)
+        job_script_step = payload.get("script_step")
+        refreshed_lead = await get_lead(phone)
+        if (
+            job_script_step is not None
+            and refreshed_lead is not None
+            and refreshed_lead.script_step != job_script_step
+        ):
+            logger.info(
+                "⏭️ Script já avançou desde o debounce — avanço ignorado para evitar salto duplo.",
+                phone=phone,
+                job_id=job_id,
+                job_script_step=job_script_step,
+                current_script_step=refreshed_lead.script_step,
+            )
+        else:
+            await run_script_step(phone, acolhimento_override=acolhimento_text)
 
     logger.info(
         "⏱️ Inbound processado por job persistente.",

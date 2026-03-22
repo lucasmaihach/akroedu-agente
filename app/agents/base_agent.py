@@ -45,8 +45,21 @@ _CLASSIFY_TOOL = {
                     "ou a resposta não endereça o que foi perguntado no bloco atual."
                 ),
             },
+            "acolhimento_index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9,
+                "description": (
+                    "Índice (0-9) da variação de acolhimento pré-escrita que melhor combina "
+                    "com o tom emocional da mensagem do lead. "
+                    "0-2 = lead entusiasmado, animado ou muito positivo. "
+                    "3-5 = lead neutro, objetivo ou direto. "
+                    "6-7 = lead hesitante, com dúvida ou pouco engajado. "
+                    "8-9 = lead reflexivo, analítico ou com objeção implícita."
+                ),
+            },
         },
-        "required": ["intent", "advance_block"],
+        "required": ["intent", "advance_block", "acolhimento_index"],
     },
 }
 

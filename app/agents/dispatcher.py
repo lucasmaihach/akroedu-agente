@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 import structlog
@@ -18,6 +19,81 @@ from app.jobs.store import schedule_faq_reply_resume
 logger = structlog.get_logger()
 
 FAQ_RESPONSE_DELAY_SECONDS = 60
+
+# ── Detecção de respostas simples afirmativas ─────────────────────────────────
+# Leads que respondem "sim", "ok", "pode" etc. não precisam de análise LLM.
+# O engine usa seleção por hash das variações pré-definidas no script.
+_PUNCTUATION_RE = re.compile(r"[^\w\s]")
+
+_SIMPLE_AFFIRMATIVE_WORDS = {
+    "sim", "ok", "okay", "pode", "claro", "certo", "entendi",
+    "entendo", "beleza", "boa", "otimo", "ótimo", "perfeito",
+    "vai", "vamos", "quero", "show", "top", "legal",
+    "ta", "tá", "faz", "conta", "fala", "adorei", "gostei",
+    "com certeza", "pode ser", "pode falar", "pode continuar",
+    "me conta", "me fala", "faz sentido", "quero sim",
+    "continua", "me mostra", "me fale", "boa escolha",
+}
+
+_SIMPLE_AFFIRMATIVE_STARTERS = {
+    "sim", "ok", "pode", "claro", "certo", "vai", "quero",
+    "show", "top", "boa", "otimo", "ótimo",
+}
+
+
+def _is_simple_affirmative(text: str) -> bool:
+    """
+    Detecta respostas curtas e afirmativas que não precisam de análise LLM.
+    Frases com mais de 5 palavras sempre passam pelo classify_intent.
+    """
+    cleaned = _PUNCTUATION_RE.sub("", text.lower().strip())
+    words = cleaned.split()
+    if not words or len(words) > 5:
+        return False
+    if cleaned in _SIMPLE_AFFIRMATIVE_WORDS:
+        return True
+    # Frase curta (≤3 palavras) iniciada por palavra claramente afirmativa
+    return len(words) <= 3 and words[0] in _SIMPLE_AFFIRMATIVE_STARTERS
+
+
+def _pick_variation(
+    script: list[dict],
+    step: int,
+    index: int | None,
+    lead_name: str | None = None,
+) -> str | None:
+    """
+    Seleciona a variação de acolhimento pré-escrita para o step atual.
+
+    - Usa o índice retornado pelo classify_intent quando válido.
+    - Fallback para seleção por hash do step quando índice é None ou inválido.
+    - Substitui [nome] pelo primeiro nome do lead.
+    - Converte list[str] em string única (as variações podem ser listas de bolhas).
+    """
+    if not script or step >= len(script):
+        return None
+
+    variations = script[step].get("acolhimento_variations")
+    if not variations:
+        return None
+
+    if index is not None and 0 <= index < len(variations):
+        selected = variations[index]
+    else:
+        selected = variations[step % len(variations)]
+
+    # Variação pode ser str ou list[str] — junta em string única
+    text = " ".join(selected) if isinstance(selected, list) else selected
+
+    # Substitui placeholder de nome
+    if lead_name:
+        nome = lead_name.strip().split()[0]
+        text = text.replace("[nome]", nome)
+    else:
+        text = text.replace(", [nome]", "").replace("[nome]", "").strip()
+
+    return text
+
 
 # Palavras que indicam que o lead está perguntando sobre preço
 _PRICE_KEYWORDS = [
@@ -327,23 +403,29 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
             )
             return True, None
 
-        # ── CLASSIFICAÇÃO + ACOLHIMENTO (camada 4) ──────────────────────────────
-        # Duas chamadas LLM separadas com papéis distintos:
-        #   A) Haiku classifica a intenção e decide se o bloco avança (JSON via tool_use)
-        #   B) Haiku gera 1 frase de acolhimento contextual (max_tokens=80, barreira física)
-        # Ambas recebem histórico recente para ter contexto do que foi perguntado antes.
+        # ── RESPOSTA SIMPLES (camada 4a) ─────────────────────────────────────────
+        # "sim", "ok", "pode", "entendi", "faz sentido" etc.
+        # Não precisa de LLM — engine seleciona variação por hash.
+        if _is_simple_affirmative(user_message):
+            logger.info(
+                "✅ Resposta simples afirmativa — LLM ignorado, avançando script.",
+                phone=lead.phone_number,
+                step=lead.script_step,
+                message=user_message[:30],
+            )
+            return True, None
 
+        # ── CLASSIFICAÇÃO (camada 4b) ────────────────────────────────────────────
+        # Haiku classifica a intenção via tool_use (JSON garantido) e escolhe o
+        # índice da variação de acolhimento pré-escrita que melhor combina com
+        # o tom da mensagem — zero geração livre, zero risco de vazar preço.
         classification = await agent.classify_intent(lead=lead, user_message=user_message)
         intent = classification.get("intent", "RESPOSTA_SCRIPT")
         advance_block = classification.get("advance_block", True)
+        acolhimento_index = classification.get("acolhimento_index", None)
 
-        acolhimento = await agent.generate_acolhimento(
-            lead=lead,
-            user_message=user_message,
-            intent=intent,
-        )
-        # Validação de segurança: descarta silenciosamente se o LLM vazar preço
-        acolhimento = output_guard.sanitize(acolhimento)
+        # Resolve o índice em texto usando a lista pré-escrita do step atual
+        acolhimento = _pick_variation(current_script, lead.script_step, acolhimento_index, lead.name)
 
         # ── advance_block=False: lead foi evasivo ────────────────────────────
         # Envia o acolhimento e re-pergunta o fechamento do bloco atual.
@@ -368,11 +450,11 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
             return False, None
 
         logger.info(
-            "Script ativo — acolhimento gerado, bloco avança.",
+            "Script ativo — variação selecionada, bloco avança.",
             phone=lead.phone_number,
             step=lead.script_step,
             intent=intent,
-            advance_block=advance_block,
+            acolhimento_index=acolhimento_index,
             acolhimento_preview=(acolhimento or "")[:60],
         )
         return True, acolhimento

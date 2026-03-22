@@ -465,24 +465,34 @@ async def send_typing_indicator(message_id: str) -> None:
 async def send_recording_indicator(message_id: str) -> None:
     """
     Envia o indicador de gravação de áudio ('Gravando áudio...') para o lead.
-    Usa type=audio no mesmo endpoint de typing_indicator.
+    Tenta type=audio primeiro; se a Meta rejeitar, cai para type=text.
     Falhas são ignoradas silenciosamente (é um detalhe cosmético).
     """
     if not message_id:
         return
-    payload = {
-        "messaging_product": "whatsapp",
-        "status": "read",
-        "message_id": message_id,
-        "typing_indicator": {"type": "audio"},
-    }
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
-            resp.raise_for_status()
-            logger.debug("🎙️ Recording indicator enviado.", msg_id=message_id)
-    except Exception as e:
-        logger.debug("🎙️ Recording indicator falhou (ignorado).", error=str(e))
+
+    for indicator_type in ("audio", "text"):
+        payload = {
+            "messaging_product": "whatsapp",
+            "status": "read",
+            "message_id": message_id,
+            "typing_indicator": {"type": indicator_type},
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+                if resp.status_code < 300:
+                    logger.info("🎙️ Recording indicator enviado.", msg_id=message_id, type=indicator_type)
+                    return
+                # type=audio pode ser rejeitado pela Meta — tenta type=text como fallback
+                logger.info(
+                    "🎙️ Recording indicator falhou, tentando fallback.",
+                    type=indicator_type,
+                    status=resp.status_code,
+                    body=resp.text[:200],
+                )
+        except Exception as e:
+            logger.info("🎙️ Recording indicator erro, tentando fallback.", type=indicator_type, error=str(e))
 
 
 async def send_recording_and_wait(message_id: str, duration_seconds: float) -> None:

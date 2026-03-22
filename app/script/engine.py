@@ -295,19 +295,19 @@ async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_ov
         audio = step.get("audio")
         if audio:
             # Aguarda ANTES do áudio simulando tempo de gravação.
-            # O lead vê "digitando..." enquanto Taynara "grava" — muito mais natural
+            # O lead vê "gravando áudio..." enquanto Taynara "grava" — muito mais natural
             # do que receber o áudio e depois ficar 60s sem resposta.
             audio_duration = step.get("audio_duration_seconds", 0)
-            if audio_duration > 0:
-                logger.info(
-                    "⏳ Simulando gravação antes de enviar áudio.",
-                    phone=phone,
-                    step=step_index,
-                    duration=audio_duration,
-                )
-                await whatsapp.send_recording_and_wait(msg_id, audio_duration)
-            else:
-                await asyncio.sleep(1.5)
+            # Usa a duração real do áudio se disponível; caso contrário mostra o
+            # indicador por pelo menos 2s para não entregar o áudio sem aviso nenhum.
+            indicator_duration = max(audio_duration, 2.0)
+            logger.info(
+                "⏳ Simulando gravação antes de enviar áudio.",
+                phone=phone,
+                step=step_index,
+                duration=indicator_duration,
+            )
+            await whatsapp.send_recording_and_wait(msg_id, indicator_duration)
 
             if audio.startswith("http"):
                 # URL externa — envia diretamente por link

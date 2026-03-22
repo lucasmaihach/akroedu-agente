@@ -43,7 +43,7 @@ POS_FISIO_NEURO_CONFIG: dict = {
     "price_skip_to_step": 6,
 
     # Passo específico onde o bloco de preço é enviado.
-    "price_offer_step": 8,
+    "price_offer_step": 9,
 }
 
 POS_FISIO_NEURO_SCRIPT: list[dict] = [

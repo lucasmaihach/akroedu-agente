@@ -129,6 +129,7 @@ def _normalize(text: str) -> str:
     text = text.lower().strip()
     text = unicodedata.normalize("NFD", text)
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.replace("-", "")  # "on-line" → "online", "e-mail" → "email"
     return " ".join(text.split())
 
 

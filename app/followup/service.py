@@ -159,7 +159,7 @@ async def stop_followup_on_inbound(lead: Lead, user_message: str) -> None:
 
     updated = await update_lead_field(lead.phone_number, **updates)
 
-    if lead.followup_status == "running":
+    if lead.followup_status == "running" and (lead.followup_step or 0) > 0:
         await escalation.notify_human_only(
             lead=updated,
             reason="Lead respondeu mensagem de follow-up",

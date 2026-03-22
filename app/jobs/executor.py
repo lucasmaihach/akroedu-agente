@@ -104,9 +104,9 @@ async def _execute_debounce_inbound(job_id: int, phone: str, payload: dict) -> N
         return
 
     lead = await get_or_create_lead(phone=phone, name=contact_name)
-    should_advance_script = await dispatch(lead=lead, user_message=merged_text)
+    should_advance_script, acolhimento_text = await dispatch(lead=lead, user_message=merged_text)
     if should_advance_script:
-        await run_script_step(phone)
+        await run_script_step(phone, acolhimento_override=acolhimento_text)
 
     logger.info(
         "⏱️ Inbound processado por job persistente.",

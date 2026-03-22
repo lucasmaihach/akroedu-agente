@@ -61,18 +61,22 @@ FAQ_INTENTS = [
     {
         "keywords": ["qual o preço", "quanto custa", "valor da pós", "mensalidade", "quanto é"],
         "response": "O valor integral é *R$ 9.500*, parcelado em até *14x de R$ 794* no boleto.\n\nMas temos condições especiais de bolsa — posso te explicar melhor?",
+        "price_sensitive": True,
     },
     {
         "keywords": ["aceita cartão de crédito", "pode pagar no cartão", "parcelamento no cartão", "tem opção no cartão"],
         "response": "Sim, tem opção no cartão de crédito! Me conta em qual condição você tem interesse e eu te passo os detalhes de pagamento 😊",
+        "price_sensitive": True,
     },
     {
         "keywords": ["aceita pix", "pode pagar no pix", "pagar à vista", "tem desconto à vista"],
         "response": "Sim, aceitamos PIX! Se quiser pagar à vista ou tem interesse em condição especial, me fala que eu verifico o que consigo te oferecer 🙂",
+        "price_sensitive": True,
     },
     {
         "keywords": ["o que é a taxa de matrícula", "precisa pagar matrícula", "a matrícula é separada", "pago matrícula e mensalidade"],
         "response": "A taxa de matrícula é um valor único pago na hora da inscrição para garantir sua vaga. A primeira mensalidade só começa no mês seguinte. Ou seja, você se matricula hoje e já tem acesso ao material — sem pagar mensalidade imediatamente 👌",
+        "price_sensitive": True,
     },
     {
         "keywords": [
@@ -86,14 +90,17 @@ FAQ_INTENTS = [
     {
         "keywords": ["tem bolsa", "tem desconto", "condição especial", "tem promoção", "tem como baixar o preço"],
         "response": "Tem sim! Temos duas condições de bolsa:\n\n🎓 *Bolsa 1* — indicando pessoas (não precisam se matricular): *12x de R$ 559* + matrícula de R$ 350\n\n🎯 *Bolsa 2* — indicando 5 pessoas + decidir hoje: *20x de R$ 257* + matrícula de R$ 197\n\nQual faz mais sentido pra você?",
+        "price_sensitive": True,
     },
     {
         "keywords": ["a bolsa expira", "até quando vale a bolsa", "prazo da bolsa", "posso pegar a bolsa amanhã"],
         "response": "A Bolsa 2 (melhor condição) é *válida apenas hoje* ⏳ Depois volta ao valor integral. Se quiser garantir, é agora. Me fala e eu te passo o link!",
+        "price_sensitive": True,
     },
     {
         "keywords": ["como funciona a indicação", "preciso indicar quem", "a pessoa precisa se matricular", "como faço a indicação"],
         "response": "Você só precisa me passar o contato de 5 pessoas que podem ter interesse na pós — colegas fisioterapeutas, por exemplo. Eles *não precisam se matricular*, só indicar já garante a condição da Bolsa 1. Para a Bolsa 2, a indicação de 5 + sua decisão hoje 😊",
+        "price_sensitive": True,
     },
     {
         "keywords": ["qual a plataforma", "onde assistem as aulas", "tem aplicativo", "acessa pelo celular", "como acesso o curso"],
@@ -125,15 +132,18 @@ def _normalize(text: str) -> str:
     return " ".join(text.split())
 
 
-def match_faq_response(text: str) -> tuple[Optional[str], bool]:
+def match_faq_response(text: str, exclude_price: bool = False) -> tuple[Optional[str], bool]:
     """
     Retorna (resposta, notify_human).
     - resposta=None quando não encontrou intenção mapeada.
     - notify_human=True para intenções sensíveis (ex.: cancelamento/reembolso).
+    - exclude_price=True ignora intents marcados com price_sensitive (usar durante script ativo).
     """
     normalized = _normalize(text)
 
     for intent in FAQ_INTENTS:
+        if exclude_price and intent.get("price_sensitive"):
+            continue
         for raw_kw in intent["keywords"]:
             if _normalize(raw_kw) in normalized:
                 return intent["response"], bool(intent.get("notify_human", False))

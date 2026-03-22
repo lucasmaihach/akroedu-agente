@@ -9,6 +9,8 @@ from app.agents.courses.curso_2_agent import Curso2Agent
 from app.agents.courses.pos_fisio_neuro_agent import PosFisioNeuroAgent
 from app.memory.session import update_lead_field
 from app.services import whatsapp
+from app.services import escalation
+from app.services import output_guard
 from app.agents.courses.pos_fisio_neuro_faq import match_faq_response
 from app.utils.business_hours import is_within_business_hours, now_utc
 from app.jobs.store import schedule_faq_reply_resume
@@ -81,6 +83,29 @@ def _get_pending_engagement_question(lead: Lead, script: list[dict]) -> str | No
     return None
 
 
+def _get_current_closing_question(lead: Lead, script: list[dict]) -> str | None:
+    """
+    Retorna a pergunta de fechamento do bloco atual para reenviar quando
+    o lead responde de forma evasiva (advance_block=False).
+
+    Prioriza post_text (última coisa enviada no bloco), depois mid_text.
+    Se for lista, retorna o último item.
+    """
+    if script is None or lead.script_step >= len(script):
+        return None
+
+    current_step = script[lead.script_step]
+    for field in ("post_text", "mid_text"):
+        value = current_step.get(field)
+        if not value:
+            continue
+        if isinstance(value, list):
+            return value[-1] if value else None
+        return value
+
+    return None
+
+
 
 # Mapa de curso → agente instanciado
 AGENT_MAP = {
@@ -110,21 +135,23 @@ def _build_welcome_message() -> str:
     )
 
 
-async def dispatch(lead: Lead, user_message: str) -> bool:
+async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
     """
     Ponto central de despacho de mensagens.
     1. Identifica o curso de interesse via router
     2. Roteia para o agente especialista correto
     3. Se não identificar, faz pergunta de qualificação
 
-    Retorna True se o script deve avançar normalmente,
-    False se o dispatch já tratou a mensagem e o script NÃO deve avançar.
+    Retorna (should_advance_script, acolhimento_text):
+    - should_advance_script: True se o engine deve rodar o próximo passo do script
+    - acolhimento_text: frase curta gerada pelo LLM para substituir as acolhimento_variations
+      do script (None quando não se aplica — o engine usa as variações pré-definidas)
     """
 
     # 1. Se lead foi escalado, ignora mensagens (humano está cuidando)
     if lead.is_escalated:
         logger.info("Lead escalado, mensagem ignorada.", phone=lead.phone_number)
-        return False
+        return False, None
 
     # 2. Identifica o curso de interesse
     course = await identify_course(lead, user_message)
@@ -138,7 +165,7 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                     "Lead novo fora do horário comercial — boas-vindas não enviada.",
                     phone=lead.phone_number,
                 )
-                return False
+                return False, None
 
             lead = await update_lead_field(
                 lead.phone_number,
@@ -155,7 +182,7 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                     phone=lead.phone_number,
                     last_unknown_prompt_at=str(lead.last_unknown_prompt_at),
                 )
-                return False
+                return False, None
 
             await whatsapp.send_text(
                 to=lead.phone_number,
@@ -165,7 +192,7 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                 ),
             )
             await update_lead_field(lead.phone_number, last_unknown_prompt_at=now)
-        return False
+        return False, None
 
     # 4. Atualiza o estágio para NURTURING se ainda estava em IDENTIFYING/NEW
     is_first_contact = lead.stage in (LeadStage.NEW, LeadStage.IDENTIFYING)
@@ -179,13 +206,13 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
         # Primeiro contato: o script engine (step 0) envia o BLOCO 1 de boas-vindas.
         # Não chamamos o agente aqui para evitar mensagem dupla.
         logger.info("Primeiro contato — aguardando script engine enviar BLOCO 1.", phone=lead.phone_number)
-        return True  # avança o script normalmente (vai rodar BLOCO 1)
+        return True, None  # avança o script normalmente (vai rodar BLOCO 1)
 
     # 5. Roteia para o agente especialista
     agent = AGENT_MAP.get(course)
     if agent is None:
         logger.error("Nenhum agente encontrado para o curso.", course=course)
-        return False
+        return False, None
 
     # Verifica se o script ainda está ativo para passar o modo correto ao agente.
     # script_active=True significa que o AI deve ficar em modo silencioso (1-2 frases,
@@ -204,26 +231,50 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
     )
 
     # Enquanto o script estiver ativo (qualquer step antes do preço), a AI fica
-    # silenciada, com exceções controladas (FAQ e dúvidas pontuais).
+    # silenciada. O único papel do LLM é gerar 1 frase de acolhimento.
     if script_active:
-        # FAQ controlado para POS Fisio Neuro durante script ativo (antes do preço).
-        # Inclui perguntas de preço, que devem ser respondidas pelo FAQ e depois
-        # retomar o script automaticamente sem depender de nova resposta do lead.
-        if course == CourseSlug.POS_FISIO_NEURO:
-            if _is_asking_price(user_message):
+        # ── ESCALAÇÃO (prioridade máxima — lead pediu atendimento humano explicitamente) ──
+        if escalation.should_escalate_by_message(user_message):
+            updated_lead = await escalation.escalate(lead, reason="Lead pediu atendimento humano durante script")
+            from app.services import crm
+            await crm.sync_lead(updated_lead)
+            logger.info("🚨 Lead escalado durante script ativo.", phone=lead.phone_number)
+            return False, None
+
+        # ── PROTEÇÃO DE PREÇO (camada 1 — hardcoded, imune a qualquer LLM/FAQ) ──
+        if _is_asking_price(user_message):
+            new_count = lead.price_ask_count + 1
+            lead = await update_lead_field(lead.phone_number, price_ask_count=new_count)
+
+            if new_count < 2:
+                # Primeira pergunta de preço: reconhece e segue o script na ordem normal.
                 await whatsapp.send_text(
                     to=lead.phone_number,
-                    text="Perfeito, já vou te explicar os valores no próximo passo 😊",
+                    text="Já vou chegar nos valores, prometo! 😊 Me deixa te mostrar mais um pouquinho antes.",
+                )
+                logger.info(
+                    "💰 Preço perguntado pela 1ª vez — acknowledged, script segue na ordem.",
+                    phone=lead.phone_number,
+                    price_ask_count=new_count,
+                )
+            else:
+                # Segunda pergunta de preço: pula para o bloco de preço.
+                await whatsapp.send_text(
+                    to=lead.phone_number,
+                    text="Tá bom! Já te falo sobre o investimento 😊",
                 )
                 await update_lead_field(lead.phone_number, script_step=price_skip_to_step)
                 logger.info(
-                    "💰 Lead perguntou preço durante script ativo (POS) — sem revelar valor antes da hora.",
+                    "💰 Preço perguntado pela 2ª vez — pulando para step de preço.",
                     phone=lead.phone_number,
                     new_step=price_skip_to_step,
+                    price_ask_count=new_count,
                 )
-                return True
+            return True, None
 
-            faq_response, notify_human = match_faq_response(user_message)
+        # ── FAQ (camada 2 — intents de preço excluídos durante script ativo) ──
+        if course == CourseSlug.POS_FISIO_NEURO:
+            faq_response, notify_human = match_faq_response(user_message, exclude_price=True)
             if faq_response:
                 await schedule_faq_reply_resume(
                     phone=lead.phone_number,
@@ -233,64 +284,79 @@ async def dispatch(lead: Lead, user_message: str) -> bool:
                     expected_script_step=lead.script_step,
                     delay_seconds=FAQ_RESPONSE_DELAY_SECONDS,
                 )
-
                 logger.info(
-                    "FAQ detectado durante script ativo; resposta agendada com atraso e retomada automática do fluxo.",
+                    "FAQ detectado durante script ativo; resposta agendada e script retomado.",
                     phone=lead.phone_number,
                     step=lead.script_step,
-                    delay_seconds=FAQ_RESPONSE_DELAY_SECONDS,
                     notify_human=notify_human,
                 )
+                return False, None
 
-                return False
+        # ── CLASSIFICAÇÃO + ACOLHIMENTO (camada 3) ──────────────────────────────
+        # Duas chamadas LLM separadas com papéis distintos:
+        #   A) Haiku classifica a intenção e decide se o bloco avança (JSON via tool_use)
+        #   B) Haiku gera 1 frase de acolhimento contextual (max_tokens=80, barreira física)
 
-            # Só trata como FAQ não mapeado se realmente parecer pergunta.
-            # Nesse caso, responde primeiro e depois segue o script normalmente.
-            if _looks_like_question(user_message):
-                await agent.get_response(lead=lead, user_message=user_message, script_active=True)
-                logger.info(
-                    "Pergunta fora do FAQ durante script ativo — resposta enviada e script segue.",
-                    phone=lead.phone_number,
-                    step=lead.script_step,
-                )
-                return True
+        classification = await agent.classify_intent(lead=lead, user_message=user_message)
+        intent = classification.get("intent", "RESPOSTA_SCRIPT")
+        advance_block = classification.get("advance_block", True)
 
-            logger.info(
-                "Mensagem normal durante script ativo (sem FAQ) — avançando script.",
-                phone=lead.phone_number,
-                step=lead.script_step,
-            )
-            return True
+        acolhimento = await agent.generate_acolhimento(
+            lead=lead,
+            user_message=user_message,
+            intent=intent,
+        )
+        # Validação de segurança: descarta silenciosamente se o LLM vazar preço
+        acolhimento = output_guard.sanitize(acolhimento)
 
-        if _is_asking_price(user_message):
-            # Para cursos sem FAQ estruturado, mantém fallback de preço sem travar fluxo.
+        # Pergunta fora do FAQ: avisa o lead + notifica humano em background
+        if _looks_like_question(user_message):
             await whatsapp.send_text(
                 to=lead.phone_number,
-                text="Perfeito, já vou te explicar os valores no próximo passo 😊",
+                text="Vou verificar isso pra você e já te respondo! 😊",
             )
-            await update_lead_field(lead.phone_number, script_step=price_skip_to_step)
-            logger.info(
-                "💰 Lead perguntou preço durante script ativo (fallback sem FAQ) — seguindo fluxo sem depender de resposta.",
-                phone=lead.phone_number,
-                new_step=price_skip_to_step,
+            await escalation.notify_human_only(
+                lead=lead,
+                reason="Pergunta fora do FAQ durante script ativo",
+                user_message=user_message,
             )
-            return True
-
-        if _looks_like_question(user_message):
-            await agent.get_response(lead=lead, user_message=user_message, script_active=True)
             logger.info(
-                "Pergunta durante script ativo — respondida antes de avançar.",
+                "Pergunta fora do FAQ — lead avisado + humano notificado, script continua.",
                 phone=lead.phone_number,
                 step=lead.script_step,
             )
-            return True
+
+        # ── advance_block=False: lead foi evasivo ────────────────────────────
+        # Envia o acolhimento e re-pergunta o fechamento do bloco atual.
+        # O engine não é chamado — o script não avança.
+        if not advance_block:
+            if acolhimento:
+                delay = whatsapp.estimate_typing_delay(acolhimento)
+                await whatsapp.send_typing_and_wait(lead.last_received_msg_id or "", delay)
+                await whatsapp.send_text(to=lead.phone_number, text=acolhimento)
+
+            closing = _get_current_closing_question(lead, current_script)
+            if closing:
+                await whatsapp.send_typing_and_wait(lead.last_received_msg_id or "", 1.5)
+                await whatsapp.send_text(to=lead.phone_number, text=closing)
+
+            logger.info(
+                "Lead evasivo — bloco não avança, closing question reenviada.",
+                phone=lead.phone_number,
+                step=lead.script_step,
+                intent=intent,
+            )
+            return False, None
 
         logger.info(
-            "Script ativo: mensagem coerente com fluxo, avançando script.",
+            "Script ativo — acolhimento gerado, bloco avança.",
             phone=lead.phone_number,
             step=lead.script_step,
+            intent=intent,
+            advance_block=advance_block,
+            acolhimento_preview=(acolhimento or "")[:60],
         )
-        return True  # mensagem normal durante script — avança normalmente
+        return True, acolhimento
 
     await agent.get_response(lead=lead, user_message=user_message, script_active=script_active)
-    return True
+    return True, None

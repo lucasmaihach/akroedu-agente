@@ -19,6 +19,64 @@ client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 NON_SCRIPT_RESPONSE_DELAY_SECONDS = 2  # Espera principal é controlada no webhook (janela de 2 min)
 
+# ── Classificador de intenção ────────────────────────────────────────────────
+# Tool schema usado pelo classify_intent para forçar output estruturado via tool_use.
+# tool_choice={"type":"tool","name":"classify"} garante que Claude SEMPRE preenche
+# os campos — sem texto livre, sem JSON malformado.
+_CLASSIFY_TOOL = {
+    "name": "classify",
+    "description": "Classifica a intenção da mensagem do lead e decide se o script deve avançar.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "intent": {
+                "type": "string",
+                "enum": [
+                    "RESPOSTA_SCRIPT",    # lead respondeu o que foi perguntado
+                    "MENSAGEM_GENERICA",  # qualquer outra coisa
+                ],
+                "description": "Classificação da intenção da mensagem.",
+            },
+            "advance_block": {
+                "type": "boolean",
+                "description": (
+                    "true = lead respondeu de forma engajada (compartilhou algo, disse sim/ok/concordou). "
+                    "false = lead foi evasivo, perguntou algo, respondeu com apenas 1-2 palavras vazias "
+                    "ou a resposta não endereça o que foi perguntado no bloco atual."
+                ),
+            },
+        },
+        "required": ["intent", "advance_block"],
+    },
+}
+
+# ── Acolhimento ───────────────────────────────────────────────────────────────
+# Propositalmente sem knowledge base — o LLM não deve ter acesso a nenhuma
+# informação que possa "escapar" como preço ou detalhes do curso.
+_ACOLHIMENTO_SYSTEM = (
+    "Você é {agent_name}, consultora de matrículas.\n\n"
+    "TAREFA ÚNICA: gere APENAS 1 frase curtíssima de acolhimento para a mensagem recebida.\n"
+    "Contexto da intenção classificada: {intent}\n\n"
+    "REGRAS ABSOLUTAS:\n"
+    "- Máximo 1 frase, máximo 12 palavras\n"
+    "- ZERO informações sobre o curso, preço, módulos ou qualquer conteúdo\n"
+    "- ZERO perguntas\n"
+    "- APENAS mostre que você leu e está presente\n"
+    "- Linguagem calorosa e natural, português brasileiro\n"
+    "- Não use travessão (—)\n\n"
+    "EXEMPLOS CORRETOS:\n"
+    "Faz todo sentido!\n"
+    "Que bom que você trouxe isso 😊\n"
+    "Entendo perfeitamente!\n"
+    "Legal que você compartilhou isso!\n"
+    "Isso é muito comum mesmo 😊\n\n"
+    "EXEMPLOS ERRADOS (NUNCA FAÇA):\n"
+    "❌ qualquer frase com preço, valor, R$, módulo, certificado\n"
+    "❌ qualquer pergunta\n"
+    "❌ mais de uma frase\n\n"
+    "Responda APENAS com a frase de acolhimento, sem mais nada."
+)
+
 
 class BaseAgent:
     """
@@ -140,6 +198,68 @@ class BaseAgent:
             lead = await update_lead_field(lead.phone_number, stage=LeadStage.CONVERTED)
 
         return lead
+
+    async def classify_intent(self, lead: Lead, user_message: str) -> dict:
+        """
+        Classifica a intenção da mensagem e decide se o bloco deve avançar.
+
+        Usa tool_use com schema obrigatório — garante JSON válido sem retry.
+        Modelo leve (Haiku) para custo e latência baixos.
+
+        Retorna dict com:
+          - intent: "RESPOSTA_SCRIPT" | "MENSAGEM_GENERICA"
+          - advance_block: True se o lead respondeu suficientemente
+        """
+        system = (
+            f"Você classifica mensagens de leads em um funil de vendas via WhatsApp.\n"
+            f"Bloco atual do script: {lead.script_step}.\n\n"
+            f"advance_block = true: lead respondeu de forma engajada "
+            f"(compartilhou algo relevante, disse sim/ok, demonstrou interesse).\n"
+            f"advance_block = false: lead foi evasivo, deu resposta de 1-2 palavras vazias, "
+            f"mudou de assunto ou não endereçou o que foi perguntado."
+        )
+        try:
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=150,
+                system=system,
+                messages=[{"role": "user", "content": user_message}],
+                tools=[_CLASSIFY_TOOL],
+                tool_choice={"type": "tool", "name": "classify"},
+            )
+            for block in response.content:
+                if block.type == "tool_use" and block.name == "classify":
+                    return block.input
+        except Exception as e:
+            logger.warning("Falha ao classificar intent — avançando por padrão.", error=str(e), phone=lead.phone_number)
+
+        # Fallback seguro: assume que respondeu e avança
+        return {"intent": "RESPOSTA_SCRIPT", "advance_block": True}
+
+    async def generate_acolhimento(self, lead: Lead, user_message: str, intent: str = "RESPOSTA_SCRIPT") -> Optional[str]:
+        """
+        Gera 1 frase curta de acolhimento durante script ativo.
+
+        max_tokens=80 é uma barreira física da API — impede geração longa
+        independente do prompt ou de injeção adversarial.
+
+        Retorna None em caso de erro (o script continua mesmo sem acolhimento).
+        """
+        agent_name = getattr(self, "agent_name", "Taynara")
+        system = _ACOLHIMENTO_SYSTEM.format(agent_name=agent_name, intent=intent)
+        try:
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=80,
+                system=system,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            if not response.content or not hasattr(response.content[0], "text"):
+                return None
+            return response.content[0].text.strip()
+        except Exception as e:
+            logger.warning("Falha ao gerar acolhimento — script continua.", error=str(e), phone=lead.phone_number)
+            return None
 
     async def respond(
         self,

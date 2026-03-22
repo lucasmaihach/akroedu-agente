@@ -134,7 +134,7 @@ async def _run_script_when_business_opens(phone: str, wait_seconds: float) -> No
         await release_script_lock(phone)
 
 
-async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
+async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_override: Optional[str] = None) -> bool:
     """
     Executa o próximo passo do script de áudios para o lead.
     Retorna True se enviou alguma coisa, False se o script terminou ou está em lock.
@@ -223,11 +223,18 @@ async def run_script_step(phone: str, retry_on_lock: bool = True) -> bool:
             return False
         msg_id = lead.last_received_msg_id or ""
 
-        # Envia acolhimento personalizado antes do bloco (se existir variações).
-        # A variação é escolhida deterministicamente pelo telefone — mesmo lead,
-        # mesmo tom em toda a conversa. Substitui "[nome]" pelo primeiro nome.
+        # Envia acolhimento antes do bloco.
+        # Se o dispatcher gerou um acolhimento contextual via LLM (acolhimento_override),
+        # ele tem prioridade. Caso contrário, usa as variações pré-definidas no script.
         acolhimento_list = step.get("acolhimento_variations")
-        if acolhimento_list:
+        if acolhimento_override:
+            # Acolhimento contextual gerado pelo LLM: envia como bolha única.
+            delay = whatsapp.estimate_typing_delay(acolhimento_override)
+            await whatsapp.send_typing_and_wait(msg_id, delay)
+            await whatsapp.send_text(to=phone, text=acolhimento_override)
+            await asyncio.sleep(1.5)
+        elif acolhimento_list:
+            # Fallback: variação pré-definida escolhida deterministicamente pelo telefone.
             nome = ""
             if lead and lead.name:
                 nome = lead.name.strip().split()[0]

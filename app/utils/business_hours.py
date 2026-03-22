@@ -21,13 +21,9 @@ def fit_business_hours(dt_utc: datetime) -> datetime:
     elif dt_brt.hour >= END_HOUR:
         dt_brt = (dt_brt + timedelta(days=1)).replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
 
-    # Pula domingo (weekday 6 = domingo)
-    if dt_brt.weekday() == 6:
-        dt_brt = (dt_brt + timedelta(days=1)).replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
-
     return dt_brt.astimezone(timezone.utc)
 
 
 def is_within_business_hours(dt_utc: datetime | None = None) -> bool:
     dt_brt = (dt_utc or now_utc()).astimezone(BRT)
-    return dt_brt.weekday() != 6 and START_HOUR <= dt_brt.hour < END_HOUR
+    return START_HOUR <= dt_brt.hour < END_HOUR

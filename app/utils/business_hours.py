@@ -14,14 +14,20 @@ def now_utc() -> datetime:
 
 def fit_business_hours(dt_utc: datetime) -> datetime:
     dt_brt = dt_utc.astimezone(BRT)
+
+    # Ajusta hora antes de verificar dia da semana
     if dt_brt.hour < START_HOUR:
         dt_brt = dt_brt.replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
     elif dt_brt.hour >= END_HOUR:
-        next_day = dt_brt + timedelta(days=1)
-        dt_brt = next_day.replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
+        dt_brt = (dt_brt + timedelta(days=1)).replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
+
+    # Pula domingo (weekday 6 = domingo)
+    if dt_brt.weekday() == 6:
+        dt_brt = (dt_brt + timedelta(days=1)).replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
+
     return dt_brt.astimezone(timezone.utc)
 
 
 def is_within_business_hours(dt_utc: datetime | None = None) -> bool:
     dt_brt = (dt_utc or now_utc()).astimezone(BRT)
-    return START_HOUR <= dt_brt.hour < END_HOUR
+    return dt_brt.weekday() != 6 and START_HOUR <= dt_brt.hour < END_HOUR

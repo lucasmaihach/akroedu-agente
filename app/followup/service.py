@@ -21,7 +21,6 @@ from app.services.error_alert import notify_conversation_error
 logger = structlog.get_logger()
 
 WINDOW_HOURS = 24
-MIN_FOLLOWUP_GAP_MINUTES = 60
 
 SCENARIO_PRE_PRICE = "pre_price"
 SCENARIO_POST_PRICE = "post_price"
@@ -336,12 +335,13 @@ async def _process_one(lead: Lead) -> None:
             return
 
         next_step = step + 1
-        next_at = fit_business_hours(_step_due_at(lead, scenario, next_step))
 
-        # Evita mensagens coladas quando múltiplos passos ficaram vencidos fora da janela.
-        min_next_at = fit_business_hours(now + timedelta(minutes=MIN_FOLLOWUP_GAP_MINUTES))
-        if next_at < min_next_at:
-            next_at = min_next_at
+        # Preserva o intervalo original entre steps.
+        # Se o servidor ficou offline e vários steps venceram, o próximo é agendado
+        # com o mesmo gap relativo a partir de agora (ex: steps com gap de 6h e 4h
+        # saem como +6h e +4h a partir do envio atual, não colados).
+        original_gap = _step_due_at(lead, scenario, next_step) - _step_due_at(lead, scenario, step)
+        next_at = fit_business_hours(now + original_gap)
         await update_lead_field(
             lead.phone_number,
             followup_step=next_step,

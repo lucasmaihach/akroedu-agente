@@ -462,6 +462,43 @@ async def send_typing_indicator(message_id: str) -> None:
         logger.debug("⌨️ Typing indicator falhou (ignorado).", error=str(e))
 
 
+async def send_recording_indicator(message_id: str) -> None:
+    """
+    Envia o indicador de gravação de áudio ('Gravando áudio...') para o lead.
+    Usa type=audio no mesmo endpoint de typing_indicator.
+    Falhas são ignoradas silenciosamente (é um detalhe cosmético).
+    """
+    if not message_id:
+        return
+    payload = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+        "typing_indicator": {"type": "audio"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+            resp.raise_for_status()
+            logger.debug("🎙️ Recording indicator enviado.", msg_id=message_id)
+    except Exception as e:
+        logger.debug("🎙️ Recording indicator falhou (ignorado).", error=str(e))
+
+
+async def send_recording_and_wait(message_id: str, duration_seconds: float) -> None:
+    """
+    Mostra o indicador de gravação de áudio e aguarda antes de enviar.
+    Para durações acima de 24s, reenvia o indicador antes de expirar.
+    """
+    import asyncio
+    remaining = max(0.5, duration_seconds)
+    while remaining > 0:
+        await send_recording_indicator(message_id)
+        chunk = min(remaining, 24.0)
+        await asyncio.sleep(chunk)
+        remaining -= chunk
+
+
 async def send_typing_and_wait(message_id: str, duration_seconds: float) -> None:
     """
     Mostra o indicador de digitação e aguarda o tempo necessário antes de enviar.

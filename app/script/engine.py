@@ -305,7 +305,7 @@ async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_ov
                     step=step_index,
                     duration=audio_duration,
                 )
-                await whatsapp.send_typing_and_wait(msg_id, audio_duration)
+                await whatsapp.send_recording_and_wait(msg_id, audio_duration)
             else:
                 await asyncio.sleep(1.5)
 

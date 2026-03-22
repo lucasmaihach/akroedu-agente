@@ -49,7 +49,9 @@ def _looks_like_question(text: str) -> bool:
     if lower.startswith("por que") or lower.startswith("por quê"):
         return True
 
-    strong_terms = {"cancelamento", "cancelar", "reembolso", "multa", "mensalidade", "preco", "preço", "valor"}
+    # Apenas termos que indicam dúvida real sobre políticas.
+    # Preço/mensalidade/valor são tratados pela camada de proteção de preço antes de chegar aqui.
+    strong_terms = {"cancelamento", "cancelar", "reembolso", "multa"}
     return any(t in strong_terms for t in tokens)
 
 
@@ -276,6 +278,18 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
         if course == CourseSlug.POS_FISIO_NEURO:
             faq_response, notify_human = match_faq_response(user_message, exclude_price=True)
             if faq_response:
+                # Gera acolhimento antes da resposta para não parecer mensagem seca/robótica.
+                faq_acolhimento = await agent.generate_acolhimento(
+                    lead=lead,
+                    user_message=user_message,
+                    intent="MENSAGEM_GENERICA",
+                )
+                faq_acolhimento = output_guard.sanitize(faq_acolhimento)
+                if faq_acolhimento:
+                    delay = whatsapp.estimate_typing_delay(faq_acolhimento)
+                    await whatsapp.send_typing_and_wait(lead.last_received_msg_id or "", delay)
+                    await whatsapp.send_text(to=lead.phone_number, text=faq_acolhimento)
+
                 await schedule_faq_reply_resume(
                     phone=lead.phone_number,
                     faq_response=faq_response,
@@ -285,17 +299,38 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                     delay_seconds=FAQ_RESPONSE_DELAY_SECONDS,
                 )
                 logger.info(
-                    "FAQ detectado durante script ativo; resposta agendada e script retomado.",
+                    "FAQ detectado durante script ativo; acolhimento enviado, resposta agendada.",
                     phone=lead.phone_number,
                     step=lead.script_step,
                     notify_human=notify_human,
                 )
                 return False, None
 
-        # ── CLASSIFICAÇÃO + ACOLHIMENTO (camada 3) ──────────────────────────────
+        # ── PERGUNTA FORA DO FAQ (camada 3) ──────────────────────────────────
+        # Verificado ANTES do classify+acolhimento para evitar chamadas LLM desnecessárias
+        # e garantir que o script NÃO avança — o lead precisa de resposta humana primeiro.
+        if _looks_like_question(user_message):
+            await whatsapp.send_text(
+                to=lead.phone_number,
+                text="Vou verificar isso pra você e já te respondo! 😊",
+            )
+            await escalation.notify_human_only(
+                lead=lead,
+                reason="Pergunta fora do FAQ durante script ativo",
+                user_message=user_message,
+            )
+            logger.info(
+                "Pergunta fora do FAQ — lead avisado + humano notificado, script pausado.",
+                phone=lead.phone_number,
+                step=lead.script_step,
+            )
+            return False, None
+
+        # ── CLASSIFICAÇÃO + ACOLHIMENTO (camada 4) ──────────────────────────────
         # Duas chamadas LLM separadas com papéis distintos:
         #   A) Haiku classifica a intenção e decide se o bloco avança (JSON via tool_use)
         #   B) Haiku gera 1 frase de acolhimento contextual (max_tokens=80, barreira física)
+        # Ambas recebem histórico recente para ter contexto do que foi perguntado antes.
 
         classification = await agent.classify_intent(lead=lead, user_message=user_message)
         intent = classification.get("intent", "RESPOSTA_SCRIPT")
@@ -308,23 +343,6 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
         )
         # Validação de segurança: descarta silenciosamente se o LLM vazar preço
         acolhimento = output_guard.sanitize(acolhimento)
-
-        # Pergunta fora do FAQ: avisa o lead + notifica humano em background
-        if _looks_like_question(user_message):
-            await whatsapp.send_text(
-                to=lead.phone_number,
-                text="Vou verificar isso pra você e já te respondo! 😊",
-            )
-            await escalation.notify_human_only(
-                lead=lead,
-                reason="Pergunta fora do FAQ durante script ativo",
-                user_message=user_message,
-            )
-            logger.info(
-                "Pergunta fora do FAQ — lead avisado + humano notificado, script continua.",
-                phone=lead.phone_number,
-                step=lead.script_step,
-            )
 
         # ── advance_block=False: lead foi evasivo ────────────────────────────
         # Envia o acolhimento e re-pergunta o fechamento do bloco atual.

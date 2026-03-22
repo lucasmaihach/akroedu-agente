@@ -219,11 +219,13 @@ class BaseAgent:
             f"mudou de assunto ou não endereçou o que foi perguntado."
         )
         try:
+            history = await get_history(lead.phone_number, last_n=6)
+            messages = history if history else [{"role": "user", "content": user_message}]
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=150,
                 system=system,
-                messages=[{"role": "user", "content": user_message}],
+                messages=messages,
                 tools=[_CLASSIFY_TOOL],
                 tool_choice={"type": "tool", "name": "classify"},
             )
@@ -248,11 +250,13 @@ class BaseAgent:
         agent_name = getattr(self, "agent_name", "Taynara")
         system = _ACOLHIMENTO_SYSTEM.format(agent_name=agent_name, intent=intent)
         try:
+            history = await get_history(lead.phone_number, last_n=6)
+            messages = history if history else [{"role": "user", "content": user_message}]
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=80,
                 system=system,
-                messages=[{"role": "user", "content": user_message}],
+                messages=messages,
             )
             if not response.content or not hasattr(response.content[0], "text"):
                 return None

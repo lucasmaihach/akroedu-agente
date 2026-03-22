@@ -111,9 +111,31 @@ async def _retry_script_step_after_lock(phone: str, attempts: int = 6, interval_
     """
     Quando um inbound chega enquanto outro passo ainda está em execução,
     re-tenta avançar o script por alguns ciclos para não perder o gatilho.
+
+    Verifica o trigger do passo atual antes de executar: se for "response",
+    significa que o passo já avançou e o próximo aguarda resposta do lead —
+    não dispara automaticamente para não pular etapas.
     """
     for attempt in range(1, attempts + 1):
         await asyncio.sleep(interval_seconds)
+
+        lead = await get_lead(phone)
+        if lead is None:
+            return
+
+        script = SCRIPTS.get(lead.course_slug)
+        if script is None or lead.script_step >= len(script):
+            return
+
+        current_trigger = script[lead.script_step].get("trigger", "auto")
+        if current_trigger == "response":
+            logger.info(
+                "🔁 Re-tentativa cancelada — step atual aguarda resposta do lead.",
+                phone=phone,
+                step=lead.script_step,
+            )
+            return
+
         sent = await run_script_step(phone, retry_on_lock=False)
         if sent:
             logger.info("🔁 Re-tentativa após lock executou passo com sucesso.", phone=phone, attempt=attempt)

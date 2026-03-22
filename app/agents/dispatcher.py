@@ -307,12 +307,13 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                 return False, None
 
         # ── PERGUNTA FORA DO FAQ (camada 3) ──────────────────────────────────
-        # Verificado ANTES do classify+acolhimento para evitar chamadas LLM desnecessárias
-        # e garantir que o script NÃO avança — o lead precisa de resposta humana primeiro.
+        # Avisa o lead, notifica humano e continua o script normalmente.
+        # O script não para — muitos leads fazem uma pergunta e somem se não receberem
+        # mais conteúdo. O humano responde a dúvida em paralelo.
         if _looks_like_question(user_message):
             await whatsapp.send_text(
                 to=lead.phone_number,
-                text="Vou verificar isso pra você e já te respondo! 😊",
+                text="Vou verificar isso pra você e já te respondo! Enquanto isso, deixa eu te mandar mais algumas informações 😊",
             )
             await escalation.notify_human_only(
                 lead=lead,
@@ -320,11 +321,11 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                 user_message=user_message,
             )
             logger.info(
-                "Pergunta fora do FAQ — lead avisado + humano notificado, script pausado.",
+                "Pergunta fora do FAQ — lead avisado + humano notificado, script continua.",
                 phone=lead.phone_number,
                 step=lead.script_step,
             )
-            return False, None
+            return True, None
 
         # ── CLASSIFICAÇÃO + ACOLHIMENTO (camada 4) ──────────────────────────────
         # Duas chamadas LLM separadas com papéis distintos:

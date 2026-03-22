@@ -499,6 +499,36 @@ async def send_recording_and_wait(message_id: str, duration_seconds: float) -> N
         remaining -= chunk
 
 
+async def send_reaction(to: str, message_id: str, emoji: str = "❤️") -> None:
+    """
+    Reage a uma mensagem do lead com um emoji.
+    Falhas são ignoradas silenciosamente (é um detalhe cosmético).
+    """
+    if not message_id:
+        return
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "reaction",
+        "reaction": {
+            "message_id": message_id,
+            "emoji": emoji,
+        },
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"https://graph.facebook.com/v22.0/{settings.whatsapp_phone_number_id}/messages",
+                json=payload,
+                headers=HEADERS,
+            )
+            resp.raise_for_status()
+            logger.debug("❤️ Reação enviada.", to=to, msg_id=message_id, emoji=emoji)
+    except Exception as e:
+        logger.debug("❤️ Reação falhou (ignorado).", error=str(e))
+
+
 async def send_typing_and_wait(message_id: str, duration_seconds: float) -> None:
     """
     Mostra o indicador de digitação e aguarda o tempo necessário antes de enviar.

@@ -104,6 +104,12 @@ async def _execute_debounce_inbound(job_id: int, phone: str, payload: dict) -> N
         return
 
     lead = await get_or_create_lead(phone=phone, name=contact_name)
+
+    # Reage à última mensagem do lead com ❤️ (uma reação por janela de debounce)
+    last_msg_id = lead.last_received_msg_id
+    if last_msg_id:
+        await whatsapp.send_reaction(to=phone, message_id=last_msg_id, emoji="❤️")
+
     should_advance_script, acolhimento_text = await dispatch(lead=lead, user_message=merged_text)
     if should_advance_script:
         await run_script_step(phone, acolhimento_override=acolhimento_text)

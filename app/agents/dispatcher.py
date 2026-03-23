@@ -95,20 +95,48 @@ def _pick_variation(
     return text
 
 
-# Palavras que indicam que o lead está perguntando sobre preço
+# Palavras/frases que indicam que o lead está perguntando sobre o preço do curso.
+# "valor" e "quanto" sozinhos são genéricos demais (ex: "meu valor por hora", "quanto tempo").
+# Usamos frases mais específicas para evitar falsos positivos.
 _PRICE_KEYWORDS = [
-    "preço", "preco", "valor", "quanto", "custa", "custo",
-    "investimento", "parcela", "mensalidade", "boleto", "pix",
+    "preço", "preco",
+    "quanto custa", "quanto é", "quanto fica", "quanto tá", "quanto ta",
+    "custa", "custo",
+    "investimento",
+    "parcela", "mensalidade",
+    "boleto", "pix",
+    "qual o valor", "qual valor", "me fala o valor", "me fala o preço",
+    "quanto seria", "quanto custaria",
 ]
 
 
 def _is_asking_price(text: str) -> bool:
     lower = text.lower()
-    return any(w in lower for w in _PRICE_KEYWORDS)
+    return any(kw in lower for kw in _PRICE_KEYWORDS)
+
+
+# Saudações sociais com "?" que não são perguntas técnicas.
+# Ex: "tudo bem e você?", "como você está?", "oi, tudo bem?"
+_SOCIAL_GREETING_PATTERNS = [
+    "tudo bem", "tudo bom", "como vai", "como voce", "como você",
+    "oi tudo", "olá tudo", "ola tudo", "bom dia", "boa tarde", "boa noite",
+    "tá bem", "ta bem", "está bem",
+]
+
+
+def _is_social_greeting(text: str) -> bool:
+    """Detecta saudações sociais que contêm '?' mas não são perguntas técnicas."""
+    cleaned = _PUNCTUATION_RE.sub(" ", text.lower().strip())
+    return any(pat in cleaned for pat in _SOCIAL_GREETING_PATTERNS)
 
 
 def _looks_like_question(text: str) -> bool:
     lower = text.lower().strip()
+
+    # Saudações sociais com "?" não devem ser tratadas como perguntas técnicas.
+    if "?" in lower and _is_social_greeting(lower):
+        return False
+
     if "?" in lower:
         return True
 

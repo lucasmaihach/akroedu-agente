@@ -124,6 +124,22 @@ async def admin_monitor_page(
   let allLeads = [];
   let selectedPhone = null;
 
+  const STAGE_PT = {{
+    "new": "Novo",
+    "identifying": "Identificando",
+    "nurturing": "Em atendimento",
+    "objection": "Objeção",
+    "hot": "Interessado",
+    "negotiating": "Negociando",
+    "converted": "Convertido",
+    "escalated": "Escalado",
+    "lost": "Perdido",
+  }};
+
+  function stageLabel(stage) {{
+    return STAGE_PT[stage] || stage;
+  }}
+
   function esc(text) {{
     return (text || "")
       .replace(/&/g, "&amp;")
@@ -170,7 +186,7 @@ async def admin_monitor_page(
         <div class="name-row">
           <div class="name">
             <span>${{esc(l.name || "Lead sem nome")}}</span>
-            ${{l.is_escalated ? '<span class="tag escalated">🚨 escalado</span>' : `<span class="tag">${{esc(l.stage)}}</span>`}}
+            ${{l.is_escalated ? '<span class="tag escalated">🚨 Escalado</span>' : `<span class="tag">${{stageLabel(l.stage)}}</span>`}}
           </div>
           <span class="last-time">${{fmtTime(l.last_inbound_at)}}</span>
         </div>
@@ -221,7 +237,7 @@ async def admin_monitor_page(
     const messages = data.messages || [];
 
     document.getElementById("chatHeader").innerText = `${{lead.name || "Lead sem nome"}}`;
-    document.getElementById("chatSubHeader").innerText = `${{lead.phone_number || ""}} • ${{lead.course_slug || ""}} • ${{lead.stage || ""}}`;
+    document.getElementById("chatSubHeader").innerText = `${{lead.phone_number || ""}} • ${{lead.course_slug || ""}} • ${{stageLabel(lead.stage || "")}}`;
 
     if (!messages.length) {{
       document.getElementById("chatBody").innerHTML = "<div class='empty'>Sem histórico para este lead.</div>";

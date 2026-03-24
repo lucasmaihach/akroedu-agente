@@ -63,10 +63,10 @@ async def admin_monitor_page(
       --assistant-line: #86efac;
     }}
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font-family: Inter, Arial, sans-serif; background: var(--bg); color: var(--text); }}
-    .app {{ display:grid; grid-template-columns: 320px 1fr; height:100vh; }}
-    .sidebar {{ border-right:1px solid var(--line); background:var(--panel); overflow:auto; }}
-    .chat {{ display:flex; flex-direction:column; min-width: 0; }}
+    body {{ margin: 0; font-family: Inter, Arial, sans-serif; background: var(--bg); color: var(--text); overflow:hidden; }}
+    .app {{ display:grid; grid-template-columns: 320px 1fr; height:100vh; overflow:hidden; }}
+    .sidebar {{ border-right:1px solid var(--line); background:var(--panel); overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; min-height:0; }}
+    .chat {{ display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }}
     .header {{ padding:14px 18px; border-bottom:1px solid var(--line); background:var(--panel); }}
     .header-title {{ font-weight:700; font-size:15px; }}
     .header-meta {{ font-size:12px; color:var(--muted); margin-top:3px; }}

@@ -76,17 +76,24 @@ async def admin_monitor_page(
     .lead-item {{ padding:12px 14px; border-bottom:1px solid #f0f3f8; cursor:pointer; }}
     .lead-item:hover {{ background:#f8fbff; }}
     .lead-item.active {{ background:var(--brand-soft); border-left:3px solid var(--brand); padding-left:11px; }}
-    .name {{ font-weight:700; display:flex; align-items:center; gap:6px; }}
+    .name {{ font-weight:700; display:flex; align-items:center; gap:6px; flex:1; min-width:0; }}
+    .name-row {{ display:flex; align-items:center; justify-content:space-between; gap:6px; }}
+    .last-time {{ font-size:11px; color:var(--muted); white-space:nowrap; flex-shrink:0; }}
     .meta {{ font-size:12px; color:var(--muted); margin-top:4px; }}
-    .preview {{ font-size:13px; margin-top:7px; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-    .tag {{ background:#eef2ff; color:#4338ca; border-radius:999px; font-size:11px; padding:2px 8px; }}
+    .preview {{ font-size:13px; margin-top:5px; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+    .tag {{ background:#eef2ff; color:#4338ca; border-radius:999px; font-size:11px; padding:2px 8px; flex-shrink:0; }}
+    .tag.escalated {{ background:#fee2e2; color:#b91c1c; }}
     .chat-body {{ flex:1; overflow:auto; padding:10px 12px; display:flex; flex-direction:column; gap:6px; background:#efeae2; }}
     .msg-row {{ display:flex; width:100%; margin:0; }}
     .msg-row.user {{ justify-content:flex-start; }}
     .msg-row.assistant {{ justify-content:flex-end; }}
-    .bubble {{ max-width:min(58%, 560px); padding:8px 10px; border-radius:8px; line-height:1.3; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; font-size:13px; }}
+    .bubble-wrap {{ display:flex; flex-direction:column; max-width:min(58%, 560px); }}
+    .msg-row.user .bubble-wrap {{ align-items:flex-start; }}
+    .msg-row.assistant .bubble-wrap {{ align-items:flex-end; }}
+    .bubble {{ padding:8px 10px; border-radius:8px; line-height:1.4; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; font-size:13px; }}
     .bubble.user {{ background:#ffffff; border:1px solid #e5e7eb; border-top-left-radius:2px; }}
     .bubble.assistant {{ background:#d9fdd3; border:1px solid #b8efae; border-top-right-radius:2px; }}
+    .msg-time {{ font-size:10px; color:var(--muted); margin-top:3px; padding:0 2px; }}
     .media-chip {{ display:inline-block; font-size:10px; padding:2px 6px; border-radius:999px; background:#e2e8f0; color:#334155; font-weight:700; margin-bottom:4px; }}
     .empty {{ padding:24px; color:var(--muted); text-align:center; }}
   </style>
@@ -126,6 +133,20 @@ async def admin_monitor_page(
       .replace(/'/g, "&#39;");
   }}
 
+  function fmtTime(iso) {{
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    if (isToday) return `${{hh}}:${{mm}}`;
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    return `${{dd}}/${{mo}} ${{hh}}:${{mm}}`;
+  }}
+
   async function loadLeads() {{
     const res = await fetch(`/admin/monitor/leads?key=${{encodeURIComponent(adminKey)}}`);
     if (!res.ok) {{
@@ -146,11 +167,14 @@ async def admin_monitor_page(
 
     const htmlLeads = filtered.map(l => `
       <div class="lead-item ${{selectedPhone===l.phone_number ? "active" : ""}}" onclick="openChat('${{l.phone_number}}')">
-        <div class="name">
-          <span>${{esc(l.name || "Lead sem nome")}}</span>
-          <span class="tag">${{esc(l.stage)}}</span>
+        <div class="name-row">
+          <div class="name">
+            <span>${{esc(l.name || "Lead sem nome")}}</span>
+            ${{l.is_escalated ? '<span class="tag escalated">🚨 escalado</span>' : `<span class="tag">${{esc(l.stage)}}</span>`}}
+          </div>
+          <span class="last-time">${{fmtTime(l.last_inbound_at)}}</span>
         </div>
-        <div class="meta">${{esc(l.phone_number)}} • ${{esc(l.course_slug)}} • passo ${{l.script_step}}</div>
+        <div class="meta">${{esc(l.phone_number)}} • passo ${{l.script_step}}</div>
         <div class="preview">${{esc(l.last_message_preview || "Sem mensagens")}}</div>
       </div>
     `).join("");
@@ -206,7 +230,10 @@ async def admin_monitor_page(
 
     document.getElementById("chatBody").innerHTML = messages.map(m => `
       <div class="msg-row ${{m.role === 'assistant' ? 'assistant' : 'user'}}">
-        <div class="${{bubbleClass(m.content, m.role)}}">${{renderContent(m.content)}}</div>
+        <div class="bubble-wrap">
+          <div class="${{bubbleClass(m.content, m.role)}}">${{renderContent(m.content)}}</div>
+          ${{m.timestamp ? `<span class="msg-time">${{fmtTime(m.timestamp)}}</span>` : ""}}
+        </div>
       </div>
     `).join("");
 
@@ -268,7 +295,7 @@ async def admin_monitor_leads(
         key=lambda item: (
             item.get("is_escalated", False),
             item.get("followup_status") == "running",
-            item.get("phone_number", ""),
+            item.get("last_inbound_at") or "",
         ),
         reverse=True,
     )

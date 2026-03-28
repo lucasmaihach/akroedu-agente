@@ -279,7 +279,14 @@ async def get_history_persistent(phone: str, last_n: int = 200) -> list[dict]:
             rows = list(result.scalars().all())
 
         rows.reverse()  # mais antigo -> mais novo
-        return [{"role": row.role, "content": row.content} for row in rows]
+        return [
+            {
+                "role": row.role,
+                "content": row.content,
+                "timestamp": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
     except Exception as e:
         logger.error(
             "❌ Falha ao buscar histórico persistente no PostgreSQL.",

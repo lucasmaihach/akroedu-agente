@@ -81,7 +81,7 @@ FAQ_INTENTS = [
             "instagram da escola", "instagram da faculdade", "instagram do curso",
             "instagram dos professores", "instagram do professor",
         ],
-        "response": "Claro! Segue os links:\n\n🔗 Site da AkroEdu: *acroedu.com.br*\n🔗 Consulta MEC: https://emec.mec.gov.br/emec/consulta-cadastro/detalhamento/d96957f455f6405d14c6542552b0f6eb/MjU2NTc=\n📷 Instagram: https://www.instagram.com/akroe.du/\n\nO curso é coordenado pelo *Lucas Fulber* — você pode acompanhar o trabalho dele aqui: https://www.instagram.com/lucasfulber_/ 😊",
+        "response": "Claro! Todos os nossos professores são mestres e atuam na prática clínica. Segue os perfis:\n\n👉 *Lucas Fulber* — coordenador do curso, mestre, com clínica própria e vasta experiência neurofuncional\nhttps://www.instagram.com/lucasfulber_/\n\n👉 *Fernando Bednarski* — mestre, atuação clínica ativa na área\nhttps://www.instagram.com/fernando.bednarski\n\n👉 *Anni Brasil* — mestre, atuação clínica ativa na área\nhttps://www.instagram.com/annnibrasil",
     },
     {
         "keywords": [

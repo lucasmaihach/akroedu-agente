@@ -1,5 +1,4 @@
 import re
-from datetime import timedelta
 
 import structlog
 
@@ -247,26 +246,6 @@ AGENT_MAP = {
     CourseSlug.POS_FISIO_NEURO: PosFisioNeuroAgent(),
 }
 
-def _build_welcome_message() -> str:
-    """
-    Monta a mensagem de boas-vindas listando os cursos disponíveis dinamicamente.
-    Para adicionar um novo curso, basta registrá-lo em engine.SCRIPT_CONFIGS
-    com o campo 'name' — a mensagem passa a incluí-lo automaticamente.
-    """
-    from app.script.engine import SCRIPT_CONFIGS
-    course_names = [
-        f"• *{cfg['name']}*"
-        for cfg in SCRIPT_CONFIGS.values()
-        if cfg.get("name") and not cfg["name"].startswith("[")
-    ]
-    courses_block = "\n".join(course_names) if course_names else "• Nossos cursos de pós-graduação"
-    return (
-        "Oi! Tudo bem? 😊 Que bom que você entrou em contato!\n\n"
-        "Me conta, qual dos nossos cursos você quer saber mais?\n\n"
-        f"{courses_block}\n\n"
-        "Qual deles chamou mais atenção pra você?"
-    )
-
 
 async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
     """
@@ -303,42 +282,12 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
     # 2. Identifica o curso de interesse
     course = await identify_course(lead, user_message)
 
-    # 3. Se não identificou ainda, pede para o lead escolher
+    # 3. Se não identificou o produto, ignora silenciosamente — sem enviar nenhuma mensagem.
     if course == CourseSlug.UNKNOWN:
-        if lead.stage == LeadStage.NEW:
-            # Primeiro contato — envia boas-vindas apenas no horário comercial
-            if not is_within_business_hours(now_utc()):
-                logger.info(
-                    "Lead novo fora do horário comercial — boas-vindas não enviada.",
-                    phone=lead.phone_number,
-                )
-                return False, None
-
-            lead = await update_lead_field(
-                lead.phone_number,
-                stage=LeadStage.IDENTIFYING,
-            )
-            await whatsapp.send_text(to=lead.phone_number, text=_build_welcome_message())
-        else:
-            # Lead já está em conversa mas não identificou o curso.
-            # Evita repetir a mesma pergunta em curto intervalo por reentregas/eventos duplicados.
-            now = now_utc()
-            if lead.last_unknown_prompt_at and (now - lead.last_unknown_prompt_at) < timedelta(hours=2):
-                logger.info(
-                    "Prompt de identificação suprimido para evitar repetição.",
-                    phone=lead.phone_number,
-                    last_unknown_prompt_at=str(lead.last_unknown_prompt_at),
-                )
-                return False, None
-
-            await whatsapp.send_text(
-                to=lead.phone_number,
-                text=(
-                    "Pode me contar um pouquinho mais sobre o que você está buscando? "
-                    "Assim consigo te ajudar melhor! 😊"
-                ),
-            )
-            await update_lead_field(lead.phone_number, last_unknown_prompt_at=now)
+        logger.info(
+            "Lead sem produto mapeado — mensagem ignorada silenciosamente.",
+            phone=lead.phone_number,
+        )
         return False, None
 
     # 4. Atualiza o estágio para NURTURING se ainda estava em IDENTIFYING/NEW

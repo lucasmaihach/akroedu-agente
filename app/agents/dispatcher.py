@@ -1,4 +1,5 @@
 import re
+import random
 
 import structlog
 
@@ -18,6 +19,33 @@ from app.jobs.store import schedule_faq_reply_resume
 logger = structlog.get_logger()
 
 FAQ_RESPONSE_DELAY_SECONDS = 60
+
+# ── Variações para perguntas fora do FAQ ──────────────────────────────────────
+# Cada vez que o lead faz uma pergunta fora do FAQ, uma variação diferente é enviada
+# para não parecer automatizado quando a situação se repete na mesma conversa.
+_OUT_OF_FAQ_RESPONSES = [
+    "Vou verificar isso pra você e já te respondo! Enquanto isso, deixa eu te mandar mais algumas informações 😊",
+    "Boa pergunta! Vou checar esse detalhe e te respondo em breve. Mas enquanto isso, deixa eu continuar te contando sobre o curso 😊",
+    "Anotei sua dúvida aqui! Já vou verificar e te falo logo. Continua comigo que tenho mais coisas importantes pra te mostrar 😉",
+    "Entendido! Vou confirmar isso pra você com calma. Enquanto aguarda, deixa eu te passar mais detalhes do curso 😊",
+]
+
+# Rastreia o índice da última variação enviada por lead (evita repetição consecutiva).
+# Vive só em memória — reinicia com o container, o que é aceitável.
+_last_out_of_faq_index: dict[str, int] = {}
+
+
+def _pick_out_of_faq_response(phone: str) -> str:
+    """
+    Seleciona uma variação diferente da última enviada para este lead,
+    garantindo que a mesma frase nunca se repita em sequência.
+    """
+    last = _last_out_of_faq_index.get(phone, -1)
+    available = [i for i in range(len(_OUT_OF_FAQ_RESPONSES)) if i != last]
+    chosen = random.choice(available)
+    _last_out_of_faq_index[phone] = chosen
+    return _OUT_OF_FAQ_RESPONSES[chosen]
+
 
 # ── Detecção de respostas simples afirmativas ─────────────────────────────────
 # Leads que respondem "sim", "ok", "pode" etc. não precisam de análise LLM.
@@ -407,7 +435,7 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
         if _looks_like_question(user_message):
             await whatsapp.send_text(
                 to=lead.phone_number,
-                text="Vou verificar isso pra você e já te respondo! Enquanto isso, deixa eu te mandar mais algumas informações 😊",
+                text=_pick_out_of_faq_response(lead.phone_number),
             )
             await escalation.notify_human_only(
                 lead=lead,

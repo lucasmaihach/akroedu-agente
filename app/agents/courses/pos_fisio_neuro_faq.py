@@ -11,8 +11,18 @@ FAQ_INTENTS = [
         "response": "As aulas são gravadas e você pode assistir no seu ritmo 🎓 Além disso, temos *tutorias online e ao vivo* em cada módulo para tirar dúvidas direto com os professores.",
     },
     {
-        "keywords": ["quando começa", "início do curso", "quando as aulas começam", "data de início", "turma começa quando"],
-        "response": "Assim que você realiza o pagamento da matrícula, já fica oficialmente matriculado e começa a receber o material. As aulas ficam disponíveis na plataforma logo em seguida 😊",
+        "keywords": ["quando começa", "início do curso", "quando as aulas começam", "data de início", "turma começa quando", "próxima turma", "proxima turma", "quando abre", "quando tem turma"],
+        "response": "A próxima turma começa no final de maio! As vagas são limitadas, então se você tiver interesse, é melhor garantir sua matrícula antes de encerrar. Posso te passar as informações de inscrição? 😊",
+    },
+    {
+        "keywords": [
+            "tem avc", "tem ave", "tem parkinson", "tem tce", "tem lesao medular", "tem lesão medular",
+            "tem esclerose multipla", "tem esclerose múltipla", "tem paralisia cerebral", "tem espasticidade",
+            "avc no curso", "parkinson no curso", "reabilitacao neurologica adulta", "reabilitação neurológica adulta",
+            "quais patologias", "quais doenças", "quais conteudos", "quais conteúdos",
+            "o que tem no curso", "o que é ensinado", "conteudo do curso", "conteúdo do curso",
+        ],
+        "response": "AVC (AVE) e Parkinson estão dentro dos módulos de reabilitação neurológica adulta — junto com TCE, Lesão Medular, Esclerose Múltipla, Paralisia Cerebral e Espasticidade.\n\nVocê vai sair com protocolo clínico pra atender esses casos com segurança técnica. 😊",
     },
     {
         "keywords": ["quanto tempo dura", "duração do curso", "prazo para concluir", "quantos meses", "quanto tempo tenho para terminar"],

@@ -153,11 +153,8 @@ async def admin_monitor_page(
     if (!iso) return "";
     const d = new Date(iso);
     if (isNaN(d)) return "";
-    const now = new Date();
-    const isToday = d.toDateString() === now.toDateString();
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
-    if (isToday) return `${{hh}}:${{mm}}`;
     const dd = String(d.getDate()).padStart(2, "0");
     const mo = String(d.getMonth() + 1).padStart(2, "0");
     return `${{dd}}/${{mo}} ${{hh}}:${{mm}}`;

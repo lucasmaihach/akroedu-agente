@@ -265,31 +265,6 @@ async def _handle_incoming_message(msg, value) -> None:
 
         lead = await _upd(phone_number, **update_kwargs)
 
-        # Regra operacional: IA só atua para leads com produto/curso mapeado.
-        # Se o lead não tiver produto válido, não entra no fluxo do agente.
-        if lead.course_slug == CourseSlug.UNKNOWN:
-            now = now_utc()
-            should_notify_block = (
-                not lead.last_unknown_prompt_at
-                or (now - lead.last_unknown_prompt_at).total_seconds() > 24 * 3600
-            )
-            if should_notify_block and is_within_business_hours(now):
-                await whatsapp.send_text(
-                    to=phone_number,
-                    text=(
-                        "Oi! Este canal atende somente leads dos nossos produtos ativos. "
-                        "Se você recebeu este número por engano, me avise que direciono ao time correto. 🙂"
-                    ),
-                )
-                await _upd(phone_number, last_unknown_prompt_at=now)
-
-            logger.info(
-                "🚫 Lead sem produto mapeado: fluxo da IA bloqueado.",
-                phone=phone_number,
-                stage=lead.stage.value,
-            )
-            return
-
         # Qualquer inbound interrompe imediatamente a régua de follow-up.
         await stop_followup_on_inbound(lead=lead, user_message=text or "")
 

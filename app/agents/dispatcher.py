@@ -95,6 +95,33 @@ def _pick_variation(
     return text
 
 
+# Palavras/frases que indicam que a pessoa é um aluno atual buscando suporte pós-venda.
+_STUDENT_SUPPORT_KEYWORDS = [
+    "acesso a plataforma", "acesso à plataforma", "login da plataforma", "login e senha",
+    "não consigo acessar", "nao consigo acessar",
+    "meu acesso", "minha senha", "esqueci a senha",
+    "link de acesso", "dados de acesso",
+    "já sou aluno", "ja sou aluno", "já estou matriculado", "ja estou matriculado",
+    "já paguei", "ja paguei", "já me matriculei", "ja me matriculei",
+    "prova do módulo", "prova do modulo", "fazer a prova", "nota da prova",
+    "fui reprovado", "fui reprovada", "reprovado", "reprovada",
+    "pdr", "pedido de reconsideração",
+    "atividade de extensão", "atividade de extensao",
+    "boleto do curso", "boleto da mensalidade", "segunda via do boleto",
+    "cnpj da faculdade", "cnpj da instituição", "cnpj para imposto",
+    "imposto de renda", "declaração do imposto", "informe de rendimentos",
+    "comprovante de pagamento", "recibo do pagamento",
+    "certificado", "quando sai o certificado", "diploma",
+    "plataforma do curso", "plataforma de ensino",
+]
+
+
+def _is_student_support(text: str) -> bool:
+    """Detecta mensagens de alunos atuais buscando suporte pós-venda."""
+    lower = text.lower()
+    return any(kw in lower for kw in _STUDENT_SUPPORT_KEYWORDS)
+
+
 # Palavras/frases que indicam que o lead está perguntando sobre o preço do curso.
 # "valor" e "quanto" sozinhos são genéricos demais (ex: "meu valor por hora", "quanto tempo").
 # Usamos frases mais específicas para evitar falsos positivos.
@@ -257,6 +284,20 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
     # 1. Se lead foi escalado, ignora mensagens (humano está cuidando)
     if lead.is_escalated:
         logger.info("Lead escalado, mensagem ignorada.", phone=lead.phone_number)
+        return False, None
+
+    # 1b. Detecta alunos atuais buscando suporte pós-venda
+    if _is_student_support(user_message):
+        await whatsapp.send_text(
+            to=lead.phone_number,
+            text="Olá! Vou verificar isso pra você e já te respondo. 😊",
+        )
+        await escalation.notify_human_only(
+            lead=lead,
+            reason="Aluno atual buscando suporte pós-venda",
+            user_message=user_message,
+        )
+        logger.info("🎓 Suporte de aluno detectado — humano notificado.", phone=lead.phone_number)
         return False, None
 
     # 2. Identifica o curso de interesse

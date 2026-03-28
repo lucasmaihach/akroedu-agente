@@ -47,6 +47,74 @@ FAQ_INTENTS = [
         "response": "Tem sim 🎯 Além de todo o conteúdo técnico, a pós inclui *tutorias de marketing digital* para você aprender a se posicionar online, atrair pacientes e cobrar mais pelo seu trabalho. Esse é um dos nossos grandes diferenciais.",
     },
     {
+        "keywords": [
+            "é online", "é ead", "é a distancia", "é a distância", "100% online", "totalmente online",
+            "é presencial", "tem presencial", "é semipresencial", "funciona online",
+        ],
+        "response": "Sim, é 100% on-line! Você acessa as aulas pela plataforma, no celular ou computador, no horário que funcionar melhor pra você. Não tem dia nem horário fixo — você estuda no seu ritmo. 😊",
+    },
+    {
+        "keywords": [
+            "aceita academico", "aceita acadêmico", "ainda nao formei", "ainda não formei",
+            "estou me formando", "ultimo periodo", "último período", "reta final",
+            "posso fazer antes de formar", "daqui a 90 dias", "quando terminar a graduacao",
+        ],
+        "response": "Se você estiver no último período, já é possível ingressar na pós! Caso ainda não esteja na reta final, a recomendação é concluir a graduação primeiro e depois dar esse próximo passo. 😊",
+    },
+    {
+        "keywords": [
+            "nota no mec", "nota mec", "é reconhecido mec", "avaliação mec", "conceito mec",
+            "faculdade tem nota", "qual a nota da faculdade",
+        ],
+        "response": "A faculdade que chancela o curso tem nota *5 no MEC* — que é a nota máxima. Isso significa que o certificado é reconhecido em todo o Brasil, para concursos, hospitais e clínicas.\n\nVocê pode conferir diretamente no site do MEC: https://emec.mec.gov.br/emec/consulta-cadastro/detalhamento/d96957f455f6405d14c6542552b0f6eb/MjU2NTc=",
+    },
+    {
+        "keywords": [
+            "tem aula ao vivo", "aula ao vivo", "aulas ao vivo", "tem ao vivo",
+            "é gravado", "aulas gravadas", "acessa quando quiser",
+        ],
+        "response": "As aulas são gravadas para que você possa assistir quando quiser, quantas vezes precisar. Isso é um diferencial importante — você não perde conteúdo por causa de agenda ou plantão. 😊",
+    },
+    {
+        "keywords": [
+            "link da faculdade", "site da faculdade", "site da instituição", "site do curso",
+            "instagram da escola", "instagram da faculdade", "instagram do curso",
+            "instagram dos professores", "instagram do professor",
+        ],
+        "response": "Claro! Segue os links:\n\n🔗 Site da AkroEdu: *acroedu.com.br*\n🔗 Consulta MEC: https://emec.mec.gov.br/emec/consulta-cadastro/detalhamento/d96957f455f6405d14c6542552b0f6eb/MjU2NTc=\n📷 Instagram: https://www.instagram.com/akroe.du/\n\nO curso é coordenado pelo *Lucas Fulber* — você pode acompanhar o trabalho dele aqui: https://www.instagram.com/lucasfulber_/ 😊",
+    },
+    {
+        "keywords": [
+            "tem pos em geronto", "tem pós em geronto", "tem gerontologia", "tem geriatria",
+            "outra especialidade", "outro curso", "tem mais cursos",
+        ],
+        "response": "No momento não temos essa especialização no portfólio. Temos a *Fisioterapia Neurofuncional*, que cobre neuroreabilitação adulta, pediátrica e home care. Se quiser, te conto mais sobre ela — pode fazer sentido dependendo da área que você quer atuar. 😊",
+    },
+    {
+        "keywords": [
+            "tem pratica presencial", "tem prática presencial", "parte presencial", "pratica presencial",
+            "precisa ir presencialmente", "tem estagio presencial", "tem estágio presencial",
+            "é so online", "é só online",
+        ],
+        "response": "Não, é 100% on-line — inclusive a parte prática. Ela é trabalhada por meio de casos clínicos reais e materiais prontos pra aplicar no dia a dia. Sem necessidade de deslocamento. 😊",
+    },
+    {
+        "keywords": [
+            "curso e da anhanguera", "curso é da anhanguera", "é anhanguera", "e anhanguera",
+            "parceria com anhanguera", "faculdade anhanguera", "qual a faculdade", "qual faculdade",
+            "qual a instituição", "qual a instituicao", "qual instituicao",
+        ],
+        "response": "Temos uma parceria com a Anhanguera, mas essa pós-graduação em específico não é com eles — ela é chancelada pela *Faculdade ITH*. Se quiser saber mais sobre a instituição, posso te passar mais detalhes! 😊",
+    },
+    {
+        "keywords": [
+            "tem materia desnecessaria", "tem matéria desnecessária", "tem marketing", "tem informatica",
+            "tem história da fisioterapia", "só conteudo tecnico", "só conteúdo técnico",
+            "tem materia que nao tem nada a ver", "conteudo focado", "conteúdo focado",
+        ],
+        "response": "Não! Todos os módulos são focados na parte técnica e prática da Fisioterapia Neurofuncional — sem conteúdos genéricos que não têm nada a ver com a sua área. O que você aprende aqui, você usa na clínica. 😊",
+    },
+    {
         "keywords": ["precisa ser formado", "pode fazer na faculdade", "graduando pode fazer", "sou recém formado", "acabei de me formar", "tenho pouca experiência"],
         "response": "Para fazer uma pós-graduação você precisa ter o diploma de graduação em Fisioterapia. Se você acabou de se formar, já está elegível! E este é justamente o momento ideal para se especializar antes de o mercado te pegar generalista 😊",
     },

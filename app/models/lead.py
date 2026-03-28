@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class CourseSlug(str, Enum):
@@ -59,3 +59,17 @@ class Lead(BaseModel):
     pending_welcome_template: bool = False  # True quando template inicial ficou agendado por estar fora do horário
     welcome_template_name: Optional[str] = None
     welcome_next_at: Optional[datetime] = None
+
+    @field_validator(
+        "followup_next_at", "followup_anchor_at", "followup_started_at",
+        "followup_finished_at", "last_inbound_at", "price_sent_at",
+        "last_unknown_prompt_at", "welcome_next_at",
+        mode="before",
+    )
+    @classmethod
+    def _ensure_utc(cls, v: datetime | None) -> datetime | None:
+        if v is None:
+            return v
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v

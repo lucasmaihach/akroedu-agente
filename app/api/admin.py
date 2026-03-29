@@ -139,6 +139,21 @@ async def admin_monitor_page(
     .rate-pill.high {{ background:#dcfce7; color:#15803d; }}
     .rate-pill.mid {{ background:#fef9c3; color:#a16207; }}
     .rate-pill.low {{ background:#fee2e2; color:#b91c1c; }}
+    /* report toolbar */
+    .report-toolbar {{ display:flex; align-items:center; gap:10px; padding:12px 24px; background:var(--panel); border-bottom:1px solid var(--line); flex-shrink:0; flex-wrap:wrap; }}
+    .report-toolbar label {{ font-size:12px; color:var(--muted); font-weight:600; }}
+    .report-toolbar input[type="date"] {{ padding:7px 10px; border:1px solid #cfd8e3; border-radius:8px; font-size:13px; color:var(--text); }}
+    .btn-refresh {{ padding:8px 18px; background:var(--brand); color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; margin-left:auto; }}
+    .btn-refresh:hover {{ background:#2563eb; }}
+    .btn-refresh:disabled {{ background:#93c5fd; cursor:default; }}
+    /* abandonment bar */
+    .abandon-bar-item {{ display:flex; align-items:center; gap:8px; margin-bottom:9px; font-size:13px; }}
+    .abandon-label {{ width:100px; flex-shrink:0; }}
+    .abandon-track {{ flex:1; background:#f1f5f9; border-radius:999px; height:10px; overflow:hidden; position:relative; }}
+    .abandon-fill {{ height:100%; border-radius:999px; background:#ef4444; transition:width .4s; }}
+    .abandon-fill.low {{ background:#22c55e; }}
+    .abandon-fill.mid {{ background:#f97316; }}
+    .abandon-stats {{ font-size:11px; color:var(--muted); white-space:nowrap; min-width:110px; text-align:right; }}
   </style>
 </head>
 <body>
@@ -171,9 +186,16 @@ async def admin_monitor_page(
     </div>
 
     <!-- ABA: RELATÓRIO -->
-    <div class="tab-content" id="tab-report">
+    <div class="tab-content" id="tab-report" style="flex-direction:column">
+      <div class="report-toolbar">
+        <label>De</label>
+        <input type="date" id="filterFrom" />
+        <label>Até</label>
+        <input type="date" id="filterTo" />
+        <button class="btn-refresh" id="btnRefresh" onclick="loadReport()">↻ Atualizar</button>
+      </div>
       <div class="report-wrap" id="reportWrap">
-        <div class="empty">Carregando relatório...</div>
+        <div class="empty">Abra a aba para carregar o relatório.</div>
       </div>
     </div>
   </div>
@@ -367,6 +389,17 @@ async def admin_monitor_page(
       </div>`;
   }}
 
+  function abandonBarHtml(row) {{
+    const rate = row.abandon_rate;
+    const cls  = rate <= 20 ? "low" : rate <= 50 ? "mid" : "";
+    return `
+      <div class="abandon-bar-item">
+        <div class="abandon-label">${{esc(row.label)}}</div>
+        <div class="abandon-track"><div class="abandon-fill ${{cls}}" style="width:${{rate}}%"></div></div>
+        <div class="abandon-stats">${{row.stopped}} parados · ${{rate}}% abandon.</div>
+      </div>`;
+  }}
+
   function ratePill(rate) {{
     const cls = rate >= 30 ? "high" : rate >= 10 ? "mid" : "low";
     return `<span class="rate-pill ${{cls}}">${{rate}}%</span>`;
@@ -377,10 +410,10 @@ async def admin_monitor_page(
     return `
       <table class="fu-table">
         <thead><tr>
-          <th>Mensagem</th>
+          <th>Mensagem ${{tip("Timing de envio em relação ao último contato do lead")}}</th>
           <th>Enviado</th>
           <th>Responderam</th>
-          <th>Taxa</th>
+          <th>Taxa resp. ${{tip("% de leads que responderam após receber esta mensagem de follow-up")}}</th>
         </tr></thead>
         <tbody>
           ${{rows.map(r => `
@@ -396,24 +429,27 @@ async def admin_monitor_page(
   }}
 
   async function loadReport() {{
-    const res = await fetch(`/admin/monitor/stats?key=${{encodeURIComponent(adminKey)}}`);
+    const btn = document.getElementById("btnRefresh");
+    if (btn) {{ btn.disabled = true; btn.textContent = "Carregando..."; }}
+
+    const from = document.getElementById("filterFrom")?.value || "";
+    const to   = document.getElementById("filterTo")?.value || "";
+    let url = `/admin/monitor/stats?key=${{encodeURIComponent(adminKey)}}`;
+    if (from) url += `&date_from=${{encodeURIComponent(from)}}`;
+    if (to)   url += `&date_to=${{encodeURIComponent(to)}}`;
+
+    const res = await fetch(url);
+    if (btn) {{ btn.disabled = false; btn.textContent = "↻ Atualizar"; }}
     if (!res.ok) {{
       document.getElementById("reportWrap").innerHTML = `<div class='empty'>Erro ao carregar relatório (${{res.status}})</div>`;
       return;
     }}
     const s = await res.json();
     const now = new Date().toLocaleString("pt-BR");
+    const dateRange = (from || to) ? ` · Período: ${{from || "início"}} → ${{to || "hoje"}}` : " · Todos os períodos";
 
     const stageMax = Math.max(...Object.values(s.by_stage), 1);
     const fuMax    = Math.max(...Object.values(s.by_followup_status), 1);
-    const stepMax  = Math.max(...Object.values(s.by_script_step), 1);
-
-    // Ordena steps: numéricos primeiro, "Concluído" por último
-    const stepEntries = Object.entries(s.by_script_step).sort((a, b) => {{
-      if (a[0] === "Concluído") return 1;
-      if (b[0] === "Concluído") return -1;
-      return parseInt(a[0].replace("Step ","")) - parseInt(b[0].replace("Step ",""));
-    }});
 
     const stageBars = Object.entries(s.by_stage).map(([k, v]) =>
       barHtml(STAGE_PT_FULL[k] || k, v, stageMax, STAGE_COLOR[k] || "")
@@ -423,63 +459,66 @@ async def admin_monitor_page(
       barHtml(FU_STATUS_PT[k] || k, v, fuMax, k === "running" ? "green" : k === "stopped" || k === "failed" ? "orange" : "")
     ).join("");
 
-    const stepBars = stepEntries.map(([k, v]) =>
-      barHtml(k, v, stepMax, k === "Concluído" ? "green" : "")
-    ).join("");
+    const stepBars = (s.by_script_step || []).map(r => abandonBarHtml(r)).join("");
 
     document.getElementById("reportWrap").innerHTML = `
-      <div class="report-updated">Atualizado em ${{now}}</div>
+      <div class="report-updated">Atualizado em ${{now}}${{dateRange}}</div>
 
       <div class="report-grid">
         <div class="kpi">
-          <div class="kpi-label">Total de leads ${{tip("Todos os leads cadastrados no sistema, em qualquer estágio.")}}</div>
+          <div class="kpi-label">Total de leads ${{tip("Todos os leads no período selecionado.")}}</div>
           <div class="kpi-value blue">${{s.total_leads}}</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Respondidos pelo agente ${{tip("Leads que receberam pelo menos 1 mensagem do agente (excluindo templates iniciais).")}}</div>
+          <div class="kpi-label">Respondidos pelo agente ${{tip("Leads que receberam pelo menos 1 mensagem do agente.")}}</div>
           <div class="kpi-value green">${{s.leads_responded}}</div>
           <div class="kpi-sub">Taxa: ${{s.response_rate}}%</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Sem resposta ${{tip("Leads que entraram em contato mas o agente nunca enviou uma mensagem de volta.")}}</div>
+          <div class="kpi-label">Sem resposta ${{tip("Leads que entraram em contato mas o agente nunca respondeu.")}}</div>
           <div class="kpi-value red">${{s.leads_no_response}}</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Convertidos ${{tip("Leads que chegaram ao estágio 'Convertido' — matrícula realizada.")}}</div>
+          <div class="kpi-label">Convertidos ${{tip("Leads com matrícula realizada.")}}</div>
           <div class="kpi-value green">${{s.converted}}</div>
           <div class="kpi-sub">Taxa: ${{s.conversion_rate}}%</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Escalados ${{tip("Leads encaminhados para atendimento humano via WhatsApp.")}}</div>
+          <div class="kpi-label">Escalados ${{tip("Leads encaminhados ao humano via WhatsApp.")}}</div>
           <div class="kpi-value" style="color:#d97706">${{s.escalated}}</div>
         </div>
       </div>
 
       <div class="chart-row">
         <div class="chart-box">
-          <div class="section-title">Distribuição por estágio ${{tip("Onde cada lead está no funil de vendas agora.")}}</div>
+          <div class="section-title">Distribuição por estágio ${{tip("Onde cada lead está no funil agora.")}}</div>
           ${{stageBars}}
         </div>
         <div class="chart-box">
-          <div class="section-title">Status do follow-up ${{tip("Situação atual da régua automática de follow-up de cada lead.")}}</div>
+          <div class="section-title">Status do follow-up ${{tip("Situação atual da régua de follow-up de cada lead.")}}</div>
           ${{fuStatusBars}}
         </div>
       </div>
 
       <div class="chart-row" style="grid-template-columns:1fr">
         <div class="chart-box">
-          <div class="section-title">Abandono por step do script ${{tip("Quantidade de leads parados em cada etapa do roteiro de vendas. 'Concluído' = lead percorreu todo o script. Steps menores indicam onde há mais abandonos.")}}</div>
-          ${{stepBars}}
+          <div class="section-title">Taxa de abandono por step do script ${{tip("Para cada etapa: % de leads que chegaram até ela mas pararam aqui. Barra vermelha = alto abandono. Verde = baixo abandono. 'Concluído' = percorreu o script inteiro.")}}</div>
+          <div style="display:flex;gap:20px;font-size:11px;color:var(--muted);margin-bottom:12px">
+            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block"></span>≤20% abandono</span>
+            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#f97316;display:inline-block"></span>20–50%</span>
+            <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block"></span>>50%</span>
+          </div>
+          ${{stepBars || "<div class='empty'>Sem dados</div>"}}
         </div>
       </div>
 
       <div class="chart-row">
         <div class="chart-box">
-          <div class="section-title">Follow-up C1 — Pré-preço ${{tip("Régua enviada antes de revelar o valor. Cada linha mostra quantos leads receberam a mensagem e quantos responderam a ela.")}}</div>
+          <div class="section-title">Follow-up C1 — Pré-preço ${{tip("Régua enviada antes de revelar o valor. Mostra engajamento por mensagem.")}}</div>
           ${{fuTableHtml(s.followup_c1)}}
         </div>
         <div class="chart-box">
-          <div class="section-title">Follow-up C2 — Pós-preço ${{tip("Régua enviada após o lead ver o investimento. Mostra o engajamento em cada mensagem da sequência.")}}</div>
+          <div class="section-title">Follow-up C2 — Pós-preço ${{tip("Régua enviada após o lead ver o investimento.")}}</div>
           ${{fuTableHtml(s.followup_c2)}}
         </div>
       </div>
@@ -587,6 +626,8 @@ async def admin_monitor_history(
 async def admin_monitor_stats(
     x_admin_key: str | None = Header(default=None),
     key: str | None = Query(default=None),
+    date_from: str | None = Query(default=None, description="Filtro início (YYYY-MM-DD)"),
+    date_to: str | None = Query(default=None, description="Filtro fim (YYYY-MM-DD)"),
 ):
     """Retorna métricas agregadas de conversas para o painel de relatório."""
     _authorize_admin(x_admin_key, key)
@@ -601,6 +642,7 @@ async def admin_monitor_stats(
         _normalize_scenario,
     )
     from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT
+    from datetime import timezone
 
     MAX_SCRIPT_STEP = len(POS_FISIO_NEURO_SCRIPT)  # 19 = script concluído
 
@@ -608,8 +650,38 @@ async def admin_monitor_stats(
     C1_TIMINGS = ["2h", "3h", "6h", "12h", "20h", "D+1", "D+2", "D+3", "D+4"]
     C2_TIMINGS = ["1h", "3h", "6h", "12h", "20h", "D+1", "D+2", "D+3", "D+4", "D+5", "D+6", "D+7", "D+8"]
 
+    # ── Filtro de datas ──────────────────────────────────────────────────────
+    def _parse_date(s: str | None, end_of_day: bool = False):
+        if not s:
+            return None
+        try:
+            d = datetime.fromisoformat(s)
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            if end_of_day:
+                from datetime import timedelta
+                d = d.replace(hour=23, minute=59, second=59)
+            return d
+        except ValueError:
+            return None
+
+    dt_from = _parse_date(date_from)
+    dt_to   = _parse_date(date_to, end_of_day=True)
+
+    def _in_range(lead) -> bool:
+        ref = lead.created_at if lead.created_at else lead.last_inbound_at
+        if ref is None:
+            return dt_from is None and dt_to is None
+        if ref.tzinfo is None:
+            ref = ref.replace(tzinfo=timezone.utc)
+        if dt_from and ref < dt_from:
+            return False
+        if dt_to and ref > dt_to:
+            return False
+        return True
+
     # ── Coleta todos os leads ────────────────────────────────────────────────
-    all_leads = [lead async for lead in iter_leads()]
+    all_leads = [lead async for lead in iter_leads() if _in_range(lead)]
     total = len(all_leads)
 
     # ── Por estágio ──────────────────────────────────────────────────────────
@@ -623,15 +695,24 @@ async def admin_monitor_stats(
         fu = lead.followup_status or "idle"
         by_fu_status[fu] += 1
 
-    # ── Distribuição por step do script (filtra steps inválidos) ─────────────
-    by_script_step: dict[str, int] = defaultdict(int)
-    for lead in all_leads:
-        step = lead.script_step
-        if step >= MAX_SCRIPT_STEP:
-            label = "Concluído"
-        else:
-            label = f"Step {step}"
-        by_script_step[label] += 1
+    # ── Abandono por step do script ──────────────────────────────────────────
+    # "Chegou ao step N" = leads com script_step >= N (passaram por ele)
+    # "Parou no step N" = leads com script_step == N (ficaram aqui)
+    # Taxa de abandono = parou_no_step / chegou_ao_step * 100
+    by_script_step: list[dict] = []
+    for step_n in range(MAX_SCRIPT_STEP + 1):
+        label = "Concluído" if step_n >= MAX_SCRIPT_STEP else f"Step {step_n}"
+        stopped = sum(1 for l in all_leads if l.script_step == step_n)
+        reached = sum(1 for l in all_leads if l.script_step >= step_n)
+        if reached == 0:
+            continue
+        abandon_rate = round(stopped / reached * 100, 1)
+        by_script_step.append({
+            "label": label,
+            "stopped": stopped,
+            "reached": reached,
+            "abandon_rate": abandon_rate,
+        })
 
     # ── Escalados / convertidos ──────────────────────────────────────────────
     escalated = sum(1 for l in all_leads if l.is_escalated)
@@ -698,7 +779,7 @@ async def admin_monitor_stats(
         "escalated": escalated,
         "by_stage": dict(sorted(by_stage.items())),
         "by_followup_status": dict(sorted(by_fu_status.items())),
-        "by_script_step": dict(by_script_step),
+        "by_script_step": by_script_step,
         "followup_c1": fu_c1,
         "followup_c2": fu_c2,
     }

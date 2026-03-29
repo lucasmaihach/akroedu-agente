@@ -411,17 +411,19 @@ async def admin_monitor_page(
       <table class="fu-table">
         <thead><tr>
           <th>Mensagem ${{tip("Timing de envio em relação ao último contato do lead")}}</th>
+          <th>Tipo</th>
           <th>Enviado</th>
           <th>Responderam</th>
-          <th>Taxa resp. ${{tip("% de leads que responderam após receber esta mensagem de follow-up")}}</th>
+          <th>Taxa resp. ${{tip("% de leads que responderam após receber esta mensagem")}}</th>
         </tr></thead>
         <tbody>
           ${{rows.map(r => `
-            <tr>
+            <tr style="${{r.sent === 0 ? "opacity:0.45" : ""}}">
               <td><strong>${{r.label}}</strong></td>
+              <td><span style="font-size:10px;padding:1px 6px;border-radius:999px;background:${{r.is_template ? "#ede9fe" : "#e0f2fe"}};color:${{r.is_template ? "#6d28d9" : "#0369a1"}}">${{r.is_template ? "Template" : "Texto livre"}}</span></td>
               <td>${{r.sent}}</td>
               <td>${{r.replied}}</td>
-              <td>${{ratePill(r.reply_rate)}}</td>
+              <td>${{r.sent > 0 ? ratePill(r.reply_rate) : '<span style="color:#ccc;font-size:11px">—</span>'}}</td>
             </tr>
           `).join("")}}
         </tbody>
@@ -762,14 +764,14 @@ async def admin_monitor_stats(
                 and l.followup_step == step_idx + 1
                 and l.followup_stopped_reason == "lead_replied"
             )
-            if sent > 0:
-                fu_list.append({
-                    "step": step_idx,
-                    "label": timing,
-                    "sent": sent,
-                    "replied": replied,
-                    "reply_rate": round(replied / sent * 100, 1) if sent else 0,
-                })
+            fu_list.append({
+                "step": step_idx,
+                "label": timing,
+                "sent": sent,
+                "replied": replied,
+                "reply_rate": round(replied / sent * 100, 1) if sent else 0,
+                "is_template": step_idx >= 5,
+            })
 
     return {
         "total_leads": total,

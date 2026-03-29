@@ -669,9 +669,11 @@ async def admin_monitor_stats(
     dt_to   = _parse_date(date_to, end_of_day=True)
 
     def _in_range(lead) -> bool:
-        ref = lead.created_at if lead.created_at else lead.last_inbound_at
+        if dt_from is None and dt_to is None:
+            return True
+        ref = lead.last_inbound_at
         if ref is None:
-            return dt_from is None and dt_to is None
+            return False
         if ref.tzinfo is None:
             ref = ref.replace(tzinfo=timezone.utc)
         if dt_from and ref < dt_from:

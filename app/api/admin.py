@@ -125,6 +125,20 @@ async def admin_monitor_page(
     .bar-fill.orange {{ background:#f97316; }}
     .bar-count {{ width:36px; text-align:right; font-weight:700; color:var(--muted); font-size:12px; flex-shrink:0; }}
     .report-updated {{ font-size:11px; color:var(--muted); text-align:right; margin-bottom:12px; }}
+    /* tooltips */
+    .info-icon {{ display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:#e2e8f0; color:#64748b; font-size:10px; font-weight:700; cursor:default; margin-left:5px; position:relative; vertical-align:middle; }}
+    .info-icon:hover .tooltip {{ display:block; }}
+    .tooltip {{ display:none; position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:#1e293b; color:#f8fafc; font-size:11px; font-weight:400; padding:6px 10px; border-radius:6px; white-space:nowrap; z-index:100; min-width:180px; max-width:260px; white-space:normal; line-height:1.4; pointer-events:none; }}
+    .tooltip::after {{ content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%); border:5px solid transparent; border-top-color:#1e293b; }}
+    /* follow-up table */
+    .fu-table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+    .fu-table th {{ text-align:left; padding:6px 10px; color:var(--muted); font-size:11px; font-weight:600; text-transform:uppercase; border-bottom:1px solid var(--line); }}
+    .fu-table td {{ padding:7px 10px; border-bottom:1px solid #f1f5f9; }}
+    .fu-table tr:last-child td {{ border-bottom:none; }}
+    .rate-pill {{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }}
+    .rate-pill.high {{ background:#dcfce7; color:#15803d; }}
+    .rate-pill.mid {{ background:#fef9c3; color:#a16207; }}
+    .rate-pill.low {{ background:#fee2e2; color:#b91c1c; }}
   </style>
 </head>
 <body>
@@ -322,15 +336,26 @@ async def admin_monitor_page(
 
   // ── Relatório ─────────────────────────────────────────────────────────────
   const STAGE_COLOR = {{
-    new: "blue", identifying: "blue", nurturing: "blue",
+    new: "", identifying: "", nurturing: "blue",
     objection: "orange", hot: "green", negotiating: "green",
-    converted: "green", escalated: "orange", lost: "red",
+    converted: "green", escalated: "orange", lost: "orange",
   }};
 
   const FU_STATUS_PT = {{
-    idle: "Aguardando", running: "Em execução", stopped: "Parado",
-    finished: "Finalizado", failed: "Falhou",
+    idle: "Aguardando início", running: "Em execução",
+    stopped: "Parado (lead respondeu)", finished: "Sequência concluída", failed: "Falhou",
   }};
+
+  const STAGE_PT_FULL = {{
+    new: "Novo (sem contato)", identifying: "Identificando curso",
+    nurturing: "Em atendimento", objection: "Com objeção",
+    hot: "Interessado", negotiating: "Negociando",
+    converted: "Convertido", escalated: "Escalado p/ humano", lost: "Perdido",
+  }};
+
+  function tip(text) {{
+    return `<span class="info-icon">i<span class="tooltip">${{text}}</span></span>`;
+  }}
 
   function barHtml(label, count, max, colorClass="") {{
     const pct = max > 0 ? Math.round(count / max * 100) : 0;
@@ -340,6 +365,34 @@ async def admin_monitor_page(
         <div class="bar-track"><div class="bar-fill ${{colorClass}}" style="width:${{pct}}%"></div></div>
         <div class="bar-count">${{count}}</div>
       </div>`;
+  }}
+
+  function ratePill(rate) {{
+    const cls = rate >= 30 ? "high" : rate >= 10 ? "mid" : "low";
+    return `<span class="rate-pill ${{cls}}">${{rate}}%</span>`;
+  }}
+
+  function fuTableHtml(rows) {{
+    if (!rows || !rows.length) return "<div class='empty' style='padding:12px'>Sem dados ainda</div>";
+    return `
+      <table class="fu-table">
+        <thead><tr>
+          <th>Mensagem</th>
+          <th>Enviado</th>
+          <th>Responderam</th>
+          <th>Taxa</th>
+        </tr></thead>
+        <tbody>
+          ${{rows.map(r => `
+            <tr>
+              <td><strong>${{r.label}}</strong></td>
+              <td>${{r.sent}}</td>
+              <td>${{r.replied}}</td>
+              <td>${{ratePill(r.reply_rate)}}</td>
+            </tr>
+          `).join("")}}
+        </tbody>
+      </table>`;
   }}
 
   async function loadReport() {{
@@ -354,77 +407,80 @@ async def admin_monitor_page(
     const stageMax = Math.max(...Object.values(s.by_stage), 1);
     const fuMax    = Math.max(...Object.values(s.by_followup_status), 1);
     const stepMax  = Math.max(...Object.values(s.by_script_step), 1);
-    const fuRespMax = Math.max(...Object.values(s.fu_response_count || {{}}), 1);
+
+    // Ordena steps: numéricos primeiro, "Concluído" por último
+    const stepEntries = Object.entries(s.by_script_step).sort((a, b) => {{
+      if (a[0] === "Concluído") return 1;
+      if (b[0] === "Concluído") return -1;
+      return parseInt(a[0].replace("Step ","")) - parseInt(b[0].replace("Step ",""));
+    }});
 
     const stageBars = Object.entries(s.by_stage).map(([k, v]) =>
-      barHtml(STAGE_PT[k] || k, v, stageMax, STAGE_COLOR[k] || "")
+      barHtml(STAGE_PT_FULL[k] || k, v, stageMax, STAGE_COLOR[k] || "")
     ).join("");
 
     const fuStatusBars = Object.entries(s.by_followup_status).map(([k, v]) =>
       barHtml(FU_STATUS_PT[k] || k, v, fuMax, k === "running" ? "green" : k === "stopped" || k === "failed" ? "orange" : "")
     ).join("");
 
-    const stepBars = Object.entries(s.by_script_step).map(([k, v]) =>
-      barHtml(`Step ${{k}}`, v, stepMax)
+    const stepBars = stepEntries.map(([k, v]) =>
+      barHtml(k, v, stepMax, k === "Concluído" ? "green" : "")
     ).join("");
-
-    const fuRespBars = Object.keys(s.fu_response_count || {{}}).length
-      ? Object.entries(s.fu_response_count).map(([k, v]) =>
-          barHtml(`Follow-up step ${{k}}`, v, fuRespMax, "green")
-        ).join("")
-      : "<div class='empty' style='padding:12px'>Sem dados ainda</div>";
 
     document.getElementById("reportWrap").innerHTML = `
       <div class="report-updated">Atualizado em ${{now}}</div>
 
       <div class="report-grid">
         <div class="kpi">
-          <div class="kpi-label">Total de leads</div>
+          <div class="kpi-label">Total de leads ${{tip("Todos os leads cadastrados no sistema, em qualquer estágio.")}}</div>
           <div class="kpi-value blue">${{s.total_leads}}</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Respondidos pelo agente</div>
+          <div class="kpi-label">Respondidos pelo agente ${{tip("Leads que receberam pelo menos 1 mensagem do agente (excluindo templates iniciais).")}}</div>
           <div class="kpi-value green">${{s.leads_responded}}</div>
-          <div class="kpi-sub">Taxa de resposta: ${{s.response_rate}}%</div>
+          <div class="kpi-sub">Taxa: ${{s.response_rate}}%</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Sem resposta</div>
+          <div class="kpi-label">Sem resposta ${{tip("Leads que entraram em contato mas o agente nunca enviou uma mensagem de volta.")}}</div>
           <div class="kpi-value red">${{s.leads_no_response}}</div>
-          <div class="kpi-sub">Agente não respondeu nenhuma vez</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Convertidos</div>
+          <div class="kpi-label">Convertidos ${{tip("Leads que chegaram ao estágio 'Convertido' — matrícula realizada.")}}</div>
           <div class="kpi-value green">${{s.converted}}</div>
-          <div class="kpi-sub">Taxa de conversão: ${{s.conversion_rate}}%</div>
+          <div class="kpi-sub">Taxa: ${{s.conversion_rate}}%</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Escalados</div>
-          <div class="kpi-value orange" style="color:#d97706">${{s.escalated}}</div>
-          <div class="kpi-sub">Encaminhados ao humano</div>
+          <div class="kpi-label">Escalados ${{tip("Leads encaminhados para atendimento humano via WhatsApp.")}}</div>
+          <div class="kpi-value" style="color:#d97706">${{s.escalated}}</div>
         </div>
       </div>
 
       <div class="chart-row">
         <div class="chart-box">
-          <div class="section-title">Distribuição por estágio</div>
+          <div class="section-title">Distribuição por estágio ${{tip("Onde cada lead está no funil de vendas agora.")}}</div>
           ${{stageBars}}
         </div>
         <div class="chart-box">
-          <div class="section-title">Status do follow-up</div>
+          <div class="section-title">Status do follow-up ${{tip("Situação atual da régua automática de follow-up de cada lead.")}}</div>
           ${{fuStatusBars}}
         </div>
       </div>
 
-      <div class="chart-row">
+      <div class="chart-row" style="grid-template-columns:1fr">
         <div class="chart-box">
-          <div class="section-title">Abandono por step do script</div>
-          <div class="kpi-sub" style="margin-bottom:12px">Quantidade de leads parados em cada step</div>
+          <div class="section-title">Abandono por step do script ${{tip("Quantidade de leads parados em cada etapa do roteiro de vendas. 'Concluído' = lead percorreu todo o script. Steps menores indicam onde há mais abandonos.")}}</div>
           ${{stepBars}}
         </div>
+      </div>
+
+      <div class="chart-row">
         <div class="chart-box">
-          <div class="section-title">Follow-up com mais respostas</div>
-          <div class="kpi-sub" style="margin-bottom:12px">Leads que responderam por step de follow-up</div>
-          ${{fuRespBars}}
+          <div class="section-title">Follow-up C1 — Pré-preço ${{tip("Régua enviada antes de revelar o valor. Cada linha mostra quantos leads receberam a mensagem e quantos responderam a ela.")}}</div>
+          ${{fuTableHtml(s.followup_c1)}}
+        </div>
+        <div class="chart-box">
+          <div class="section-title">Follow-up C2 — Pós-preço ${{tip("Régua enviada após o lead ver o investimento. Mostra o engajamento em cada mensagem da sequência.")}}</div>
+          ${{fuTableHtml(s.followup_c2)}}
         </div>
       </div>
     `;
@@ -538,7 +594,19 @@ async def admin_monitor_stats(
     from collections import defaultdict
     from app.db.database import AsyncSessionLocal
     from app.db.orm_models import ConversationORM
-    from sqlalchemy import select, func
+    from sqlalchemy import select
+    from app.followup.service import (
+        SCENARIO_PRE_PRICE, SCENARIO_POST_PRICE,
+        C1_FREE, C2_FREE, C1_TEMPLATE_NAMES, C2_TEMPLATE_NAMES,
+        _normalize_scenario,
+    )
+    from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT
+
+    MAX_SCRIPT_STEP = len(POS_FISIO_NEURO_SCRIPT)  # 19 = script concluído
+
+    # Timings de cada step por cenário
+    C1_TIMINGS = ["2h", "3h", "6h", "12h", "20h", "D+1", "D+2", "D+3", "D+4"]
+    C2_TIMINGS = ["1h", "3h", "6h", "12h", "20h", "D+1", "D+2", "D+3", "D+4", "D+5", "D+6", "D+7", "D+8"]
 
     # ── Coleta todos os leads ────────────────────────────────────────────────
     all_leads = [lead async for lead in iter_leads()]
@@ -551,17 +619,19 @@ async def admin_monitor_stats(
 
     # ── Por status do follow-up ──────────────────────────────────────────────
     by_fu_status: dict[str, int] = defaultdict(int)
-    by_fu_step: dict[int, int] = defaultdict(int)
     for lead in all_leads:
         fu = lead.followup_status or "idle"
         by_fu_status[fu] += 1
-        if lead.followup_status == "running":
-            by_fu_step[lead.followup_step] += 1
 
-    # ── Distribuição de abandono por step do script ──────────────────────────
-    by_script_step: dict[int, int] = defaultdict(int)
+    # ── Distribuição por step do script (filtra steps inválidos) ─────────────
+    by_script_step: dict[str, int] = defaultdict(int)
     for lead in all_leads:
-        by_script_step[lead.script_step] += 1
+        step = lead.script_step
+        if step >= MAX_SCRIPT_STEP:
+            label = "Concluído"
+        else:
+            label = f"Step {step}"
+        by_script_step[label] += 1
 
     # ── Escalados / convertidos ──────────────────────────────────────────────
     escalated = sum(1 for l in all_leads if l.is_escalated)
@@ -584,12 +654,39 @@ async def admin_monitor_stats(
     leads_no_response = total - leads_responded
     response_rate = round(leads_responded / total * 100, 1) if total else 0
 
-    # ── Qual follow-up step recebeu mais respostas (leads que responderam
-    #    enquanto estavam num step de follow-up) ──────────────────────────────
-    fu_response_count: dict[int, int] = defaultdict(int)
-    for lead in all_leads:
-        if lead.phone_number in phones_with_response and lead.followup_step > 0:
-            fu_response_count[lead.followup_step] += 1
+    # ── Follow-up por mensagem: enviado vs respondeu (por cenário) ───────────
+    # followup_step = próximo step a enviar (step N já foi enviado quando followup_step > N)
+    # "Respondeu no step N" = lead interrompeu quando followup_step == N+1 e reason = lead_replied
+    fu_c1: list[dict] = []
+    fu_c2: list[dict] = []
+
+    for scenario_key, timings, fu_list in [
+        (SCENARIO_PRE_PRICE, C1_TIMINGS, fu_c1),
+        (SCENARIO_POST_PRICE, C2_TIMINGS, fu_c2),
+    ]:
+        for step_idx, timing in enumerate(timings):
+            # Leads com este cenário que passaram pelo step (followup_step > step_idx)
+            sent = sum(
+                1 for l in all_leads
+                if _normalize_scenario(l.followup_scenario, l) == scenario_key
+                and (l.followup_status or "idle") != "idle"
+                and l.followup_step > step_idx
+            )
+            # Leads que responderam logo após este step
+            replied = sum(
+                1 for l in all_leads
+                if _normalize_scenario(l.followup_scenario, l) == scenario_key
+                and l.followup_step == step_idx + 1
+                and l.followup_stopped_reason == "lead_replied"
+            )
+            if sent > 0:
+                fu_list.append({
+                    "step": step_idx,
+                    "label": timing,
+                    "sent": sent,
+                    "replied": replied,
+                    "reply_rate": round(replied / sent * 100, 1) if sent else 0,
+                })
 
     return {
         "total_leads": total,
@@ -601,9 +698,9 @@ async def admin_monitor_stats(
         "escalated": escalated,
         "by_stage": dict(sorted(by_stage.items())),
         "by_followup_status": dict(sorted(by_fu_status.items())),
-        "by_followup_step": dict(sorted(by_fu_step.items())),
-        "by_script_step": dict(sorted(by_script_step.items())),
-        "fu_response_count": dict(sorted(fu_response_count.items())),
+        "by_script_step": dict(by_script_step),
+        "followup_c1": fu_c1,
+        "followup_c2": fu_c2,
     }
 
 

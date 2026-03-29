@@ -1,9 +1,9 @@
 import html
-from datetime import datetime
+from datetime import datetime, timezone
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -193,6 +193,7 @@ async def admin_monitor_page(
         <label>Até</label>
         <input type="date" id="filterTo" />
         <button class="btn-refresh" id="btnRefresh" onclick="loadReport()">↻ Atualizar</button>
+        <button class="btn-refresh" style="background:#0f766e" onclick="exportReport()">⬇ Exportar conversas</button>
       </div>
       <div class="report-wrap" id="reportWrap">
         <div class="empty">Abra a aba para carregar o relatório.</div>
@@ -526,6 +527,15 @@ async def admin_monitor_page(
       </div>
     `;
   }}
+
+  function exportReport() {{
+    const from = document.getElementById("filterFrom")?.value || "";
+    const to   = document.getElementById("filterTo")?.value || "";
+    let url = `/admin/monitor/export?key=${{encodeURIComponent(adminKey)}}`;
+    if (from) url += `&date_from=${{encodeURIComponent(from)}}`;
+    if (to)   url += `&date_to=${{encodeURIComponent(to)}}`;
+    window.location.href = url;
+  }}
 </script>
 </body>
 </html>
@@ -787,6 +797,122 @@ async def admin_monitor_stats(
         "followup_c1": fu_c1,
         "followup_c2": fu_c2,
     }
+
+
+@router.get("/monitor/export")
+async def admin_export_conversations(
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+):
+    """Gera relatório de conversas em texto plano, filtrável por data."""
+    _authorize_admin(x_admin_key, key)
+
+    def _parse_dt(s: str | None, end_of_day: bool = False) -> datetime | None:
+        if not s:
+            return None
+        try:
+            d = datetime.fromisoformat(s)
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            if end_of_day:
+                d = d.replace(hour=23, minute=59, second=59)
+            return d
+        except ValueError:
+            return None
+
+    def _fmt(dt: datetime | None) -> str:
+        if not dt:
+            return "-"
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.strftime("%d/%m/%Y %H:%M")
+
+    dt_from = _parse_dt(date_from)
+    dt_to   = _parse_dt(date_to, end_of_day=True)
+
+    def _in_range(lead) -> bool:
+        if dt_from is None and dt_to is None:
+            return True
+        ref = lead.last_inbound_at
+        if ref is None:
+            return False
+        if ref.tzinfo is None:
+            ref = ref.replace(tzinfo=timezone.utc)
+        if dt_from and ref < dt_from:
+            return False
+        if dt_to and ref > dt_to:
+            return False
+        return True
+
+    all_leads = [lead async for lead in iter_leads() if _in_range(lead)]
+    all_leads.sort(
+        key=lambda l: (l.last_inbound_at or datetime.min.replace(tzinfo=timezone.utc)),
+        reverse=True,
+    )
+
+    now_str = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M")
+    period  = f"{date_from or 'início'} → {date_to or 'hoje'}" if (date_from or date_to) else "Todos os períodos"
+
+    lines: list[str] = []
+    lines.append("=" * 80)
+    lines.append(f"RELATÓRIO DE CONVERSAS — gerado em {now_str} UTC")
+    lines.append(f"Período: {period}  |  Total de leads: {len(all_leads)}")
+    lines.append("=" * 80)
+
+    for idx, lead in enumerate(all_leads, start=1):
+        history = await get_history_persistent(lead.phone_number, last_n=1000)
+        if not history:
+            history = await get_history(lead.phone_number, last_n=200)
+
+        price_sent = "sim" if lead.price_sent_at else "não"
+        scenario   = lead.followup_scenario or "-"
+
+        lines.append("")
+        lines.append("-" * 80)
+        lines.append(f"LEAD: {lead.name or '(sem nome)'}  |  {lead.phone_number}")
+        lines.append(
+            f"Estágio: {lead.stage.value}  |  Script step: {lead.script_step}  |  Preço enviado: {price_sent}"
+        )
+        lines.append(
+            f"Follow-up: {lead.followup_status or 'idle'}  |  Step FU: {lead.followup_step}  |  Cenário: {scenario}"
+        )
+        lines.append(f"Último inbound: {_fmt(lead.last_inbound_at)}")
+        lines.append(f"Total de mensagens: {len(history)}")
+        lines.append("")
+
+        if not history:
+            lines.append("  (sem mensagens registradas)")
+        else:
+            for msg in history:
+                role    = "LEAD     " if msg.get("role") == "user" else "AGENTE   "
+                ts_raw  = msg.get("timestamp")
+                if ts_raw:
+                    try:
+                        ts_dt = datetime.fromisoformat(ts_raw)
+                        if ts_dt.tzinfo is None:
+                            ts_dt = ts_dt.replace(tzinfo=timezone.utc)
+                        ts = ts_dt.strftime("%d/%m %H:%M")
+                    except Exception:
+                        ts = "??/??"
+                else:
+                    ts = "??/??"
+                content = (msg.get("content") or "").strip()
+                for i, part in enumerate(content.splitlines()):
+                    prefix = f"  [{ts}] {role}: " if i == 0 else " " * (len(ts) + 14)
+                    lines.append(f"{prefix}{part}")
+
+    lines.append("")
+    lines.append("=" * 80)
+    lines.append("FIM DO RELATÓRIO")
+    lines.append("=" * 80)
+
+    filename = f"conversas_{date_from or 'tudo'}_{date_to or 'hoje'}.txt"
+    return PlainTextResponse(
+        content="\n".join(lines),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/outbound/template")

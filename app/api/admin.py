@@ -1,5 +1,8 @@
 import html
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+_SP_TZ = ZoneInfo("America/Sao_Paulo")
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Query
@@ -233,13 +236,18 @@ async def admin_monitor_page(
 
   function fmtTime(iso) {{
     if (!iso) return "";
-    const d = new Date(iso);
+    // Garante que strings sem fuso (vindo do servidor em UTC) sejam tratadas como UTC
+    const isoUtc = iso.endsWith("Z") || /[+-]\d{{2}}:\d{{2}}$/.test(iso) ? iso : iso + "Z";
+    const d = new Date(isoUtc);
     if (isNaN(d)) return "";
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mo = String(d.getMonth() + 1).padStart(2, "0");
-    return `${{dd}}/${{mo}} ${{hh}}:${{mm}}`;
+    return d.toLocaleString("pt-BR", {{
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }}).replace(",", "");
   }}
 
   async function loadLeads() {{
@@ -827,7 +835,7 @@ async def admin_export_conversations(
             return "-"
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        return dt.strftime("%d/%m/%Y %H:%M")
+        return dt.astimezone(_SP_TZ).strftime("%d/%m/%Y %H:%M")
 
     dt_from = _parse_dt(date_from)
     dt_to   = _parse_dt(date_to, end_of_day=True)
@@ -893,7 +901,7 @@ async def admin_export_conversations(
                         ts_dt = datetime.fromisoformat(ts_raw)
                         if ts_dt.tzinfo is None:
                             ts_dt = ts_dt.replace(tzinfo=timezone.utc)
-                        ts = ts_dt.strftime("%d/%m %H:%M")
+                        ts = ts_dt.astimezone(_SP_TZ).strftime("%d/%m %H:%M")
                     except Exception:
                         ts = "??/??"
                 else:

@@ -218,6 +218,46 @@ async def _arm_followup_with_scenario(
     )
 
 
+async def resume_followup_after_reply(lead: Lead) -> None:
+    """
+    Retoma a régua de follow-up após o lead responder a um template D+,
+    quando o script já está encerrado e a régua foi interrompida ('stopped' ou 'idle').
+
+    Diferente de arm_followup_waiting_reply, NÃO reinicia a sequência do zero —
+    continua do passo atual (followup_step) com um intervalo fixo de 1h a partir
+    do momento da resposta, evitando reenvio de mensagens já enviadas.
+    """
+    if lead.course_slug != CourseSlug.POS_FISIO_NEURO or not lead.followup_enabled:
+        return
+    if lead.followup_status in ("running", "finished"):
+        return
+
+    scenario = _normalize_scenario(lead.followup_scenario, lead)
+    current_step = lead.followup_step or 0
+    final = _final_step_index(scenario)
+
+    if current_step > final:
+        return  # sequência já concluída
+
+    now = now_utc()
+    # Aguarda 1h de cortesia antes de retomar a sequência
+    next_at = fit_business_hours(now + timedelta(hours=1))
+
+    await update_lead_field(
+        lead.phone_number,
+        followup_status="running",
+        followup_next_at=next_at,
+        followup_stopped_reason=None,
+    )
+    logger.info(
+        "↩️ Follow-up retomado após resposta do lead ao template D+.",
+        phone=lead.phone_number,
+        scenario=scenario,
+        step=current_step,
+        next_at=str(next_at),
+    )
+
+
 async def arm_followup_waiting_reply(lead: Lead) -> None:
     """Ativa/reinicia a régua quando há outbound e aguardamos resposta do lead."""
     if lead.course_slug != CourseSlug.POS_FISIO_NEURO or not lead.followup_enabled:

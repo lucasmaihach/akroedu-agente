@@ -23,6 +23,14 @@ FAQ_RESPONSE_DELAY_SECONDS = 60
 # ── Variações para perguntas fora do FAQ ──────────────────────────────────────
 # Cada vez que o lead faz uma pergunta fora do FAQ, uma variação diferente é enviada
 # para não parecer automatizado quando a situação se repete na mesma conversa.
+# Padrões para detectar quando o lead informa ou corrige o próprio nome no chat.
+_NAME_CORRECTION_PATTERNS = [
+    re.compile(r'\bmeu nome [eé] ([A-ZÀ-Úa-zà-ú][A-ZÀ-Úa-zà-ú\s]{1,29})', re.IGNORECASE),
+    re.compile(r'\bme chamo ([A-ZÀ-Úa-zà-ú][A-ZÀ-Úa-zà-ú\s]{1,29})', re.IGNORECASE),
+    re.compile(r'\bpode me chamar de ([A-ZÀ-Úa-zà-ú][A-ZÀ-Úa-zà-ú\s]{1,29})', re.IGNORECASE),
+    re.compile(r'\bpode chamar de ([A-ZÀ-Úa-zà-ú][A-ZÀ-Úa-zà-ú\s]{1,29})', re.IGNORECASE),
+]
+
 _OUT_OF_FAQ_RESPONSES = [
     "Vou verificar isso pra você e já te respondo! Enquanto isso, deixa eu te mandar mais algumas informações 😊",
     "Boa pergunta! Vou checar esse detalhe e te respondo em breve. Mas enquanto isso, deixa eu continuar te contando sobre o curso 😊",
@@ -292,6 +300,16 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
     if lead.is_escalated:
         logger.info("Lead escalado, mensagem ignorada.", phone=lead.phone_number)
         return False, None
+
+    # 1a. Detecta correção de nome ("meu nome é X", "me chamo X", "pode me chamar de X")
+    for _pattern in _NAME_CORRECTION_PATTERNS:
+        _m = _pattern.search(user_message)
+        if _m:
+            new_name = _m.group(1).strip().rstrip(".!?,;")
+            if new_name and new_name.lower() != (lead.name or "").lower():
+                lead = await update_lead_field(lead.phone_number, name=new_name)
+                logger.info("Nome do lead atualizado.", phone=lead.phone_number, new_name=new_name)
+            break
 
     # 1b. Detecta alunos atuais buscando suporte pós-venda
     if _is_student_support(user_message):

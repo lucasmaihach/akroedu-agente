@@ -172,8 +172,13 @@ async def _handle_incoming_message(msg, value) -> None:
         # Extrai o texto da mensagem
         text = None
 
-        if message_type == "text" and msg.text:
-            text = msg.text.body.strip()
+        if message_type == "text":
+            if msg.text:
+                text = msg.text.body.strip()
+            else:
+                # Mensagem de texto sem corpo (ocorre em alguns tipos de notificação interna)
+                logger.info("Mensagem de texto sem corpo — ignorada silenciosamente.", phone=phone_number)
+                return
 
         elif message_type == "audio" and msg.audio:
             # Baixa o áudio da Meta e transcreve via Groq Whisper
@@ -231,8 +236,13 @@ async def _handle_incoming_message(msg, value) -> None:
                 )
                 return
 
+        elif message_type in ("reaction", "unsupported"):
+            # Reações e tipos marcados como "unsupported" pela Meta não precisam de resposta
+            logger.info("Mensagem ignorada silenciosamente.", type=message_type, phone=phone_number)
+            return
+
         else:
-            # Outros tipos (imagem, vídeo, sticker, etc.) — ignora por enquanto
+            # Outros tipos (imagem, vídeo, sticker, documento, etc.) — avisa o lead
             logger.info("Mensagem ignorada (tipo não suportado).", type=message_type)
             if is_within_business_hours(now_utc()):
                 await whatsapp.send_text(

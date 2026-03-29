@@ -129,6 +129,16 @@ async def _execute_debounce_inbound(job_id: int, phone: str, payload: dict) -> N
         else:
             await run_script_step(phone, acolhimento_override=acolhimento_text)
 
+    # Bug 4: se o script já está completo e a régua está parada (lead respondeu a um
+    # template D+), retoma a sequência de follow-up do passo atual sem reiniciar do zero.
+    from app.followup.service import resume_followup_after_reply
+    from app.script.engine import SCRIPTS
+    refreshed_final = await get_lead(phone)
+    if refreshed_final and refreshed_final.followup_enabled:
+        script_final = SCRIPTS.get(refreshed_final.course_slug)
+        if script_final is not None and refreshed_final.script_step >= len(script_final):
+            await resume_followup_after_reply(refreshed_final)
+
     logger.info(
         "⏱️ Inbound processado por job persistente.",
         phone=phone,
@@ -202,13 +212,42 @@ async def _execute_faq_reply_resume(job_id: int, phone: str, payload: dict) -> N
         await complete_job(job_id)
         return
 
-    await run_script_step(phone, retry_on_lock=False)
-    logger.info(
-        "FAQ respondido por job persistente e script retomado automaticamente.",
-        phone=phone,
-        step=expected_script_step,
-        notify_human=notify_human,
-    )
+    # Após responder o FAQ, re-engaja o lead reenviando APENAS a pergunta de fechamento
+    # do bloco atual — sem re-executar o passo inteiro (áudio, imagens, texto completo),
+    # o que causaria duplicação de conteúdo já enviado anteriormente.
+    from app.script.engine import SCRIPTS
+    script = SCRIPTS.get(refreshed_lead.course_slug)
+    closing_question = None
+    if script and refreshed_lead.script_step < len(script):
+        step_data = script[refreshed_lead.script_step]
+        for field in ("post_text", "mid_text"):
+            val = step_data.get(field)
+            if val:
+                items = val if isinstance(val, list) else [val]
+                for item in reversed(items):
+                    if isinstance(item, str) and "?" in item:
+                        closing_question = item.strip()
+                        break
+            if closing_question:
+                break
+
+    if closing_question:
+        await asyncio.sleep(1.5)
+        await whatsapp.send_text(to=phone, text=closing_question)
+        logger.info(
+            "FAQ respondido; pergunta de fechamento reenviada para re-engajar lead.",
+            phone=phone,
+            step=expected_script_step,
+        )
+    else:
+        # Sem pergunta de fechamento no bloco → avança o script normalmente
+        await run_script_step(phone, retry_on_lock=False)
+        logger.info(
+            "FAQ respondido por job persistente e script retomado automaticamente.",
+            phone=phone,
+            step=expected_script_step,
+            notify_human=notify_human,
+        )
 
     await complete_job(job_id)
 

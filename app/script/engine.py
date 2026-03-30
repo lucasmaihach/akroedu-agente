@@ -170,6 +170,11 @@ async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_ov
         logger.warning("Lead não encontrado para execução do script.", phone=phone)
         return False
 
+    # Se agente está pausado, não executa nada
+    if lead.agent_paused:
+        logger.info("⏸ Agent paused for this lead, skipping script execution.", phone=phone)
+        return False
+
     # Se já foi escalado, para o script
     if lead.is_escalated:
         return False

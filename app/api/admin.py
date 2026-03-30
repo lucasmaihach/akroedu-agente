@@ -25,6 +25,10 @@ class OutboundTemplateRequest(BaseModel):
     body_params: list[str] = Field(default_factory=list, description="Parâmetros do body na ordem do template")
 
 
+class PauseAgentRequest(BaseModel):
+    phone_number: str = Field(..., description="Número do lead (com ou sem DDI)")
+
+
 def _authorize_admin(x_admin_key: str | None, key: str | None = None) -> None:
     token = x_admin_key or key
     if not token or token != settings.app_secret:
@@ -949,4 +953,139 @@ async def send_outbound_template(payload: OutboundTemplateRequest, x_admin_key: 
         "to": payload.phone_number,
         "template": payload.template_name,
         "meta_response": response,
+    }
+
+
+# ─────────────────────────────────────────
+# AGENT CONTROL ENDPOINTS (Pausa/Retoma)
+# ─────────────────────────────────────────
+
+
+@router.post("/lead-pause-agent")
+async def pause_agent_for_lead(
+    payload: PauseAgentRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Pausar agente para um lead específico."""
+    _authorize_admin(x_admin_key)
+
+    phone = payload.phone_number
+    lead = await get_history(phone, return_full_lead=True)
+
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"Lead {phone} não encontrado")
+
+    await update_lead_field(phone, "agent_paused", True)
+    logger.info(f"⏸ Agent paused for {phone}")
+
+    return {
+        "status": "paused",
+        "phone": phone,
+        "name": lead.name,
+        "message": "Agente pausado para este lead",
+    }
+
+
+@router.post("/lead-resume-agent")
+async def resume_agent_for_lead(
+    payload: PauseAgentRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Retomar agente para um lead específico."""
+    _authorize_admin(x_admin_key)
+
+    phone = payload.phone_number
+    lead = await get_history(phone, return_full_lead=True)
+
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"Lead {phone} não encontrado")
+
+    await update_lead_field(phone, "agent_paused", False)
+    logger.info(f"▶ Agent resumed for {phone}")
+
+    return {
+        "status": "resumed",
+        "phone": phone,
+        "name": lead.name,
+        "message": "Agente retomado para este lead",
+    }
+
+
+@router.get("/lead-script-status")
+async def get_script_status(
+    phone_number: str = Query(..., description="Número do lead"),
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+):
+    """Obter status do script em execução para um lead."""
+    _authorize_admin(x_admin_key, key)
+
+    lead = await get_history(phone_number, return_full_lead=True)
+
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"Lead {phone_number} não encontrado")
+
+    return {
+        "phone": phone_number,
+        "name": lead.name,
+        "course_slug": lead.course_slug,
+        "current_script": lead.course_slug,
+        "script_step": lead.script_step,
+        "last_script_block": lead.last_script_block,
+        "is_paused": lead.agent_paused,
+        "stage": lead.stage,
+    }
+
+
+@router.get("/followups-scheduled")
+async def get_scheduled_followups(
+    status: str = Query(default="pending", description="pending|sent|failed"),
+    sort: str = Query(default="date", description="date|name|phone"),
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+):
+    """
+    Listar mensagens agendadas/followups.
+    Retorna followups pendentes, enviados ou falhados.
+    """
+    _authorize_admin(x_admin_key, key)
+
+    followups = []
+    for lead in iter_leads():
+        if not lead:
+            continue
+
+        fu_status = lead.followup_status or "idle"
+        fu_next_at = lead.followup_next_at
+
+        # Filtrar por status
+        if status == "pending" and fu_status not in ["active", "waiting"]:
+            continue
+        if status == "sent" and fu_status != "completed":
+            continue
+        if status == "failed" and fu_status != "failed":
+            continue
+
+        if fu_status in ["active", "waiting", "completed", "failed"]:
+            followups.append({
+                "phone": lead.phone_number,
+                "name": lead.name,
+                "status": fu_status,
+                "scheduled_at": fu_next_at.isoformat() if fu_next_at else None,
+                "followup_step": lead.followup_step,
+                "followup_scenario": lead.followup_scenario,
+            })
+
+    # Ordenar
+    if sort == "date":
+        followups.sort(key=lambda x: x["scheduled_at"] or "", reverse=False)
+    elif sort == "name":
+        followups.sort(key=lambda x: x["name"] or "")
+    elif sort == "phone":
+        followups.sort(key=lambda x: x["phone"])
+
+    return {
+        "total": len(followups),
+        "filtered_status": status,
+        "followups": followups,
     }

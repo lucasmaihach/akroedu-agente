@@ -41,6 +41,10 @@ class LeadORM(Base):
     welcome_template_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     welcome_next_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
 
+    # Controle do agente (pausar/retomar)
+    agent_paused: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    last_script_block: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

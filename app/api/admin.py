@@ -161,12 +161,38 @@ async def admin_monitor_page(
     .abandon-fill.low {{ background:#22c55e; }}
     .abandon-fill.mid {{ background:#f97316; }}
     .abandon-stats {{ font-size:11px; color:var(--muted); white-space:nowrap; min-width:110px; text-align:right; }}
+    /* ── agent control ── */
+    .agent-control {{ margin-top:12px; padding:12px; background:#f0f9ff; border-radius:8px; border:1px solid #bfdbfe; }}
+    .script-info {{ font-size:12px; color:var(--text); line-height:1.6; margin-bottom:10px; }}
+    .script-info div {{ margin:4px 0; }}
+    .agent-status {{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }}
+    .status-badge {{ font-size:13px; font-weight:600; padding:4px 10px; border-radius:20px; }}
+    .status-badge.active {{ background:#dcfce7; color:#15803d; }}
+    .status-badge.paused {{ background:#fee2e2; color:#b91c1c; }}
+    .btn-agent {{ padding:6px 12px; border:none; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; background:var(--brand); color:#fff; transition:background .2s; }}
+    .btn-agent:hover {{ background:#2563eb; }}
+    /* ── followups tab ── */
+    .followups-toolbar {{ display:flex; gap:12px; padding:12px 24px; background:var(--panel); border-bottom:1px solid var(--line); align-items:center; justify-content:space-between; flex-wrap:wrap; }}
+    .tag-filter {{ padding:6px 12px; border:1px solid #e5eaf2; border-radius:20px; background:#fff; cursor:pointer; font-size:12px; font-weight:600; color:var(--muted); transition:all .2s; }}
+    .tag-filter:hover {{ border-color:var(--brand); color:var(--brand); }}
+    .tag-filter.active {{ background:var(--brand); color:#fff; border-color:var(--brand); }}
+    .followups-list {{ flex:1; overflow-y:auto; padding:24px; background:var(--bg); }}
+    .fu-table {{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px; }}
+    .fu-table th {{ text-align:left; padding:10px 12px; color:var(--muted); font-size:11px; font-weight:600; text-transform:uppercase; border-bottom:2px solid var(--line); background:var(--panel); }}
+    .fu-table td {{ padding:12px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }}
+    .fu-table tbody tr:hover {{ background:#f8fbff; }}
+    .fu-table tr:last-child td {{ border-bottom:none; }}
+    .fu-status-badge {{ display:inline-block; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:600; }}
+    .fu-status-badge.pending {{ background:#dbeafe; color:#0c4a6e; }}
+    .fu-status-badge.sent {{ background:#dcfce7; color:#15803d; }}
+    .fu-status-badge.failed {{ background:#fee2e2; color:#b91c1c; }}
   </style>
 </head>
 <body>
   <div class="page-wrap">
     <div class="tabs-bar">
       <button class="tab-btn active" onclick="switchTab('monitor')">Conversas</button>
+      <button class="tab-btn" onclick="switchTab('followups')">Seguimentos</button>
       <button class="tab-btn" onclick="switchTab('report')">Relatório</button>
     </div>
 
@@ -184,11 +210,38 @@ async def admin_monitor_page(
           <div class="header">
             <div class="header-title" id="chatHeader">Selecione um lead</div>
             <div class="header-meta" id="chatSubHeader">Histórico em tempo real</div>
+            <!-- Agent Control Section -->
+            <div class="agent-control" id="agentControl" style="display:none;">
+              <div class="script-info" id="scriptInfo">
+                <div><strong>📝 Script:</strong> <span id="scriptName">-</span></div>
+                <div><strong>📍 Passo:</strong> <span id="scriptStep">0</span> | <strong>Bloco:</strong> <span id="scriptBlock">-</span></div>
+              </div>
+              <div class="agent-status">
+                <span id="agentBadge" class="status-badge active">🟢 Ativo</span>
+                <button onclick="pauseAgentForLead()" class="btn-agent" id="pauseBtn">⏸ Pausar</button>
+                <button onclick="resumeAgentForLead()" class="btn-agent" id="resumeBtn" style="display:none;">▶ Retomar</button>
+              </div>
+            </div>
           </div>
           <div class="chat-body" id="chatBody">
             <div class="empty">Sem conversa selecionada.</div>
           </div>
         </section>
+      </div>
+    </div>
+
+    <!-- ABA: SEGUIMENTOS -->
+    <div class="tab-content" id="tab-followups" style="flex-direction:column">
+      <div class="followups-toolbar">
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="tag-filter" onclick="filterFollowups('pending')" data-status="pending">✅ Pendente</button>
+          <button class="tag-filter" onclick="filterFollowups('sent')" data-status="sent">📤 Enviado</button>
+          <button class="tag-filter" onclick="filterFollowups('failed')" data-status="failed">❌ Falhou</button>
+        </div>
+        <button class="btn-refresh" onclick="loadFollowups()">↻ Atualizar</button>
+      </div>
+      <div class="followups-list" id="followupsList">
+        <div class="empty">Carregando seguimentos...</div>
       </div>
     </div>
 
@@ -548,6 +601,178 @@ async def admin_monitor_page(
     if (to)   url += `&date_to=${{encodeURIComponent(to)}}`;
     window.location.href = url;
   }}
+
+  // ─────────────────────────────────────
+  // Agent Control Functions
+  // ─────────────────────────────────────
+
+  async function pauseAgentForLead() {{
+    if (!selectedPhone) return alert("Selecione um lead primeiro");
+
+    try {{
+      const res = await fetch(`/admin/lead-pause-agent?key=${{encodeURIComponent(adminKey)}}`, {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{ phone_number: selectedPhone }})
+      }});
+
+      if (res.ok) {{
+        updateAgentStatus(true);
+        console.log("✅ Agent paused for", selectedPhone);
+      }} else {{
+        alert("Erro ao pausar agente");
+      }}
+    }} catch (err) {{
+      console.error("Error pausing agent:", err);
+      alert("Erro ao pausar agente");
+    }}
+  }}
+
+  async function resumeAgentForLead() {{
+    if (!selectedPhone) return alert("Selecione um lead primeiro");
+
+    try {{
+      const res = await fetch(`/admin/lead-resume-agent?key=${{encodeURIComponent(adminKey)}}`, {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{ phone_number: selectedPhone }})
+      }});
+
+      if (res.ok) {{
+        updateAgentStatus(false);
+        console.log("✅ Agent resumed for", selectedPhone);
+      }} else {{
+        alert("Erro ao retomar agente");
+      }}
+    }} catch (err) {{
+      console.error("Error resuming agent:", err);
+      alert("Erro ao retomar agente");
+    }}
+  }}
+
+  function updateAgentStatus(isPaused) {{
+    const badge = document.getElementById("agentBadge");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const resumeBtn = document.getElementById("resumeBtn");
+
+    if (isPaused) {{
+      badge.textContent = "🔴 Pausado";
+      badge.className = "status-badge paused";
+      pauseBtn.style.display = "none";
+      resumeBtn.style.display = "inline-block";
+    }} else {{
+      badge.textContent = "🟢 Ativo";
+      badge.className = "status-badge active";
+      pauseBtn.style.display = "inline-block";
+      resumeBtn.style.display = "none";
+    }}
+  }}
+
+  async function loadScriptStatus() {{
+    if (!selectedPhone) return;
+
+    try {{
+      const res = await fetch(`/admin/lead-script-status?phone_number=${{encodeURIComponent(selectedPhone)}}&key=${{encodeURIComponent(adminKey)}}`);
+      if (res.ok) {{
+        const data = await res.json();
+        document.getElementById("scriptName").textContent = data.current_script || "---";
+        document.getElementById("scriptStep").textContent = data.script_step;
+        document.getElementById("scriptBlock").textContent = data.last_script_block || "---";
+        document.getElementById("agentControl").style.display = "block";
+        updateAgentStatus(data.is_paused);
+      }}
+    }} catch (err) {{
+      console.error("Error loading script status:", err);
+    }}
+  }}
+
+  // ─────────────────────────────────────
+  // Followups Functions
+  // ─────────────────────────────────────
+
+  let currentFollowupFilter = "pending";
+
+  async function loadFollowups() {{
+    try {{
+      const res = await fetch(`/admin/followups-scheduled?status=${{currentFollowupFilter}}&sort=date&key=${{encodeURIComponent(adminKey)}}`);
+      if (res.ok) {{
+        const data = await res.json();
+        renderFollowups(data.followups);
+      }}
+    }} catch (err) {{
+      console.error("Error loading followups:", err);
+    }}
+  }}
+
+  function renderFollowups(followups) {{
+    const list = document.getElementById("followupsList");
+    if (!followups || followups.length === 0) {{
+      list.innerHTML = '<div class="empty">Nenhum seguimento agendado.</div>';
+      return;
+    }}
+
+    let html = '<table class="fu-table"><thead><tr><th>Lead</th><th>Status</th><th>Agendado para</th><th>Passo</th></tr></thead><tbody>';
+
+    for (const fu of followups) {{
+      const date = fu.scheduled_at ? fmtTime(fu.scheduled_at) : "---";
+      let statusBadge = "---";
+
+      if (fu.status === 'active' || fu.status === 'waiting' || fu.status === 'pending') {{
+        statusBadge = '<span class="fu-status-badge pending">✅ Pendente</span>';
+      }} else if (fu.status === 'sent' || fu.status === 'completed') {{
+        statusBadge = '<span class="fu-status-badge sent">📤 Enviado</span>';
+      }} else if (fu.status === 'failed') {{
+        statusBadge = '<span class="fu-status-badge failed">❌ Falhou</span>';
+      }}
+
+      html += `<tr>
+        <td><strong>${{esc(fu.name || "---")}}</strong><br><span style="font-size:11px;color:var(--muted)">${{esc(fu.phone || "---")}}</span></td>
+        <td>${{statusBadge}}</td>
+        <td>${{date}}</td>
+        <td>Passo ${{fu.followup_step}}</td>
+      </tr>`;
+    }}
+
+    html += '</tbody></table>';
+    list.innerHTML = html;
+  }}
+
+  function filterFollowups(status) {{
+    currentFollowupFilter = status;
+
+    // Update active button
+    document.querySelectorAll(".tag-filter").forEach(btn => {{
+      btn.classList.remove("active");
+      if (btn.getAttribute("data-status") === status) {{
+        btn.classList.add("active");
+      }}
+    }});
+
+    loadFollowups();
+  }}
+
+  // ─────────────────────────────────────
+  // Override openChat to load script status
+  // ─────────────────────────────────────
+
+  const originalOpenChat = openChat;
+  openChat = async function(phone) {{
+    originalOpenChat(phone);
+    loadScriptStatus();
+  }};
+
+  // ─────────────────────────────────────
+  // Load followups when switching to followups tab
+  // ─────────────────────────────────────
+
+  const originalSwitchTab = switchTab;
+  switchTab = function(tabName) {{
+    originalSwitchTab(tabName);
+    if (tabName === "followups") {{
+      loadFollowups();
+    }}
+  }};
+
 </script>
 </body>
 </html>

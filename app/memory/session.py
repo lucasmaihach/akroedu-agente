@@ -12,6 +12,7 @@ from app.config import settings
 from app.models.lead import Lead, LeadStage, CourseSlug
 from app.db.database import AsyncSessionLocal
 from app.db.orm_models import LeadORM
+from app.utils.gender_detection import detect_gender_from_name
 
 logger = structlog.get_logger()
 
@@ -81,6 +82,7 @@ def _lead_from_orm(lead_orm: LeadORM) -> Lead:
     return Lead(
         phone_number=lead_orm.phone_number,
         name=lead_orm.name,
+        gender=lead_orm.gender,
         course_slug=course_slug,
         stage=stage,
         sprinthub_id=lead_orm.sprinthub_id,
@@ -136,6 +138,7 @@ async def _save_lead_postgres(lead: Lead) -> None:
                 session.add(lead_orm)
 
             lead_orm.name = lead.name
+            lead_orm.gender = lead.gender
             lead_orm.course_slug = lead.course_slug.value
             lead_orm.stage = lead.stage.value
             lead_orm.sprinthub_id = lead.sprinthub_id
@@ -198,15 +201,22 @@ async def get_or_create_lead(phone: str, name: Optional[str] = None) -> Lead:
     """Retorna o lead existente ou cria um novo."""
     lead = await get_lead(phone)
     if lead is None:
+        gender = detect_gender_from_name(name) if name else "male"
         lead = Lead(
             phone_number=phone,
             name=name,
+            gender=gender,
             stage=LeadStage.NEW,
             course_slug=CourseSlug.UNKNOWN,
             script_step=0,
         )
         await save_lead(lead)
-        logger.info("🆕 Novo lead criado.", phone=phone, name=name)
+        logger.info("🆕 Novo lead criado.", phone=phone, name=name, gender=gender)
+    elif lead.name != name and name is not None:
+        # Se o nome foi corrigido, atualiza gênero também
+        lead.name = name
+        lead.gender = detect_gender_from_name(name)
+        await save_lead(lead)
     return lead
 
 

@@ -21,6 +21,7 @@ httpx==0.27.2
 python-dotenv==1.0.1
 tenacity==9.0.0
 structlog==24.4.0
+gender-guesser-br==1.0.0
 
 # Agendamento (envio de áudios por tempo)
 apscheduler==3.10.4

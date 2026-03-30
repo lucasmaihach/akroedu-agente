@@ -9,6 +9,7 @@ class LeadORM(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     phone_number: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    gender: Mapped[str] = mapped_column(String(10), default="male")
     course_slug: Mapped[str] = mapped_column(String(50), default="unknown")
     stage: Mapped[str] = mapped_column(String(30), default="new")
     sprinthub_id: Mapped[str | None] = mapped_column(String(100), nullable=True)

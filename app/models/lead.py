@@ -29,6 +29,7 @@ class LeadStage(str, Enum):
 class Lead(BaseModel):
     phone_number: str
     name: Optional[str] = None
+    gender: str = "male"  # "male" ou "female", detectado pelo nome
     course_slug: CourseSlug = CourseSlug.UNKNOWN
     stage: LeadStage = LeadStage.NEW
     sprinthub_id: Optional[str] = None  # ID do card no SprintHub

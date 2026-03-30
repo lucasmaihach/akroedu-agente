@@ -20,17 +20,21 @@ from app.script.schedules.pos_fisio_neuro_script import POS_FISIO_NEURO_SCRIPT, 
 from app.followup.service import arm_followup_waiting_reply, mark_price_sent
 from app.services.error_alert import notify_conversation_error
 from app.utils.business_hours import fit_business_hours, is_within_business_hours, now_utc
+from app.utils.gender_detection import adapt_gender_text
 
 logger = structlog.get_logger()
 
 
-async def _send_text_bubbles(phone: str, text, delay_between: float = 1.2, msg_id: str = "") -> None:
+async def _send_text_bubbles(phone: str, text, delay_between: float = 1.2, msg_id: str = "", gender: str = "male") -> None:
     """
     Envia texto ou lista de textos como bolhas separadas no WhatsApp.
     Mostra indicador de digitação antes de cada bolha e aguarda tempo proporcional.
+    Adapta marcas de gênero (o)/(a) conforme o gênero do lead.
     """
     items = text if isinstance(text, list) else [text]
     for i, item in enumerate(items):
+        # Adapta o texto conforme o gênero
+        item = adapt_gender_text(item, gender)
         delay = whatsapp.estimate_typing_delay(item)
         await whatsapp.send_typing_and_wait(msg_id, delay)
         await whatsapp.send_text(to=phone, text=item)
@@ -251,6 +255,7 @@ async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_ov
         acolhimento_list = step.get("acolhimento_variations")
         if acolhimento_override:
             # Acolhimento contextual gerado pelo LLM: envia como bolha única.
+            acolhimento_override = adapt_gender_text(acolhimento_override, lead.gender)
             delay = whatsapp.estimate_typing_delay(acolhimento_override)
             await whatsapp.send_typing_and_wait(msg_id, delay)
             await whatsapp.send_text(to=phone, text=acolhimento_override)
@@ -269,6 +274,8 @@ async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_ov
                     part = part.replace("[nome]", nome)
                 else:
                     part = part.replace(", [nome]", "").replace("[nome]", "").strip()
+                # Adapta gênero
+                part = adapt_gender_text(part, lead.gender)
                 delay = whatsapp.estimate_typing_delay(part)
                 await whatsapp.send_typing_and_wait(msg_id, delay)
                 await whatsapp.send_text(to=phone, text=part)
@@ -283,7 +290,7 @@ async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_ov
         # Envia mensagem de texto pré-passo (opcional) — suporta str ou list[str]
         pre_text = _filter_orphan_media_teaser(step.get("pre_text"), has_media_assets)
         if pre_text:
-            await _send_text_bubbles(phone, pre_text, msg_id=msg_id)
+            await _send_text_bubbles(phone, pre_text, msg_id=msg_id, gender=lead.gender)
             await asyncio.sleep(1.5)
 
         # Envia imagens ANTES do áudio (notícias, prints, etc.)
@@ -344,7 +351,7 @@ async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_ov
         # Envia texto intermediário após áudio (antes das imagens pós-áudio)
         mid_text = step.get("mid_text")
         if mid_text:
-            await _send_text_bubbles(phone, mid_text, msg_id=msg_id)
+            await _send_text_bubbles(phone, mid_text, msg_id=msg_id, gender=lead.gender)
             await asyncio.sleep(1.5)
 
         # Envia imagens APÓS o áudio (diploma, certificados, etc.)
@@ -355,7 +362,7 @@ async def run_script_step(phone: str, retry_on_lock: bool = True, acolhimento_ov
         # Envia mensagem de texto pós-áudio (opcional) — suporta str ou list[str]
         post_text = step.get("post_text")
         if post_text:
-            await _send_text_bubbles(phone, post_text, msg_id=msg_id)
+            await _send_text_bubbles(phone, post_text, msg_id=msg_id, gender=lead.gender)
 
         # Marca explicitamente quando o bloco de preço foi enviado.
         course_config = SCRIPT_CONFIGS.get(lead.course_slug, {})

@@ -15,6 +15,7 @@ from app.services import output_guard
 from app.agents.courses.pos_fisio_neuro_faq import match_faq_response
 from app.utils.business_hours import is_within_business_hours, now_utc
 from app.jobs.store import schedule_faq_reply_resume
+from app.utils.gender_detection import adapt_gender_text, detect_gender_from_name
 
 logger = structlog.get_logger()
 
@@ -43,16 +44,18 @@ _OUT_OF_FAQ_RESPONSES = [
 _last_out_of_faq_index: dict[str, int] = {}
 
 
-def _pick_out_of_faq_response(phone: str) -> str:
+def _pick_out_of_faq_response(phone: str, gender: str = "male") -> str:
     """
     Seleciona uma variação diferente da última enviada para este lead,
     garantindo que a mesma frase nunca se repita em sequência.
+    Adapta o gênero conforme necessário.
     """
     last = _last_out_of_faq_index.get(phone, -1)
     available = [i for i in range(len(_OUT_OF_FAQ_RESPONSES)) if i != last]
     chosen = random.choice(available)
     _last_out_of_faq_index[phone] = chosen
-    return _OUT_OF_FAQ_RESPONSES[chosen]
+    response = _OUT_OF_FAQ_RESPONSES[chosen]
+    return adapt_gender_text(response, gender)
 
 
 # ── Detecção de respostas simples afirmativas ─────────────────────────────────
@@ -307,8 +310,9 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
         if _m:
             new_name = _m.group(1).strip().rstrip(".!?,;")
             if new_name and new_name.lower() != (lead.name or "").lower():
-                lead = await update_lead_field(lead.phone_number, name=new_name)
-                logger.info("Nome do lead atualizado.", phone=lead.phone_number, new_name=new_name)
+                new_gender = detect_gender_from_name(new_name)
+                lead = await update_lead_field(lead.phone_number, name=new_name, gender=new_gender)
+                logger.info("Nome do lead atualizado.", phone=lead.phone_number, new_name=new_name, gender=new_gender)
             break
 
     # 1b. Detecta alunos atuais buscando suporte pós-venda
@@ -426,6 +430,8 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                 )
                 faq_acolhimento = output_guard.sanitize(faq_acolhimento)
                 if faq_acolhimento:
+                    # Adapta gênero
+                    faq_acolhimento = adapt_gender_text(faq_acolhimento, lead.gender)
                     delay = whatsapp.estimate_typing_delay(faq_acolhimento)
                     await whatsapp.send_typing_and_wait(lead.last_received_msg_id or "", delay)
                     await whatsapp.send_text(to=lead.phone_number, text=faq_acolhimento)
@@ -453,7 +459,7 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
         if _looks_like_question(user_message):
             await whatsapp.send_text(
                 to=lead.phone_number,
-                text=_pick_out_of_faq_response(lead.phone_number),
+                text=_pick_out_of_faq_response(lead.phone_number, lead.gender),
             )
             await escalation.notify_human_only(
                 lead=lead,
@@ -496,12 +502,16 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
         # O engine não é chamado — o script não avança.
         if not advance_block:
             if acolhimento:
+                # Adapta gênero
+                acolhimento = adapt_gender_text(acolhimento, lead.gender)
                 delay = whatsapp.estimate_typing_delay(acolhimento)
                 await whatsapp.send_typing_and_wait(lead.last_received_msg_id or "", delay)
                 await whatsapp.send_text(to=lead.phone_number, text=acolhimento)
 
             closing = _get_current_closing_question(lead, current_script)
             if closing:
+                # Adapta gênero
+                closing = adapt_gender_text(closing, lead.gender)
                 await whatsapp.send_typing_and_wait(lead.last_received_msg_id or "", 1.5)
                 await whatsapp.send_text(to=lead.phone_number, text=closing)
 

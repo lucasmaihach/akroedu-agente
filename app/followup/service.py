@@ -17,6 +17,7 @@ from app.services import whatsapp, escalation
 from app.api.crm_webhooks import WELCOME_TEMPLATE_NAME
 from app.utils.business_hours import now_utc, fit_business_hours, is_within_business_hours
 from app.services.error_alert import notify_conversation_error
+from app.utils.gender_detection import adapt_gender_text
 
 logger = structlog.get_logger()
 
@@ -359,6 +360,8 @@ async def _process_one(lead: Lead) -> None:
             )
         else:
             text = _free_text_for_step(lead, scenario, step)
+            # Adapta gênero
+            text = adapt_gender_text(text, lead.gender)
             dedup_key = _followup_dedup_key(lead, scenario, step, "text")
             await whatsapp.send_text(to=lead.phone_number, text=text, dedup_key=dedup_key)
 

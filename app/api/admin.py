@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.memory.session import get_history, get_history_persistent, iter_leads
+from app.memory.session import get_history, get_history_persistent, iter_leads, get_lead, update_lead_field
 from app.models.lead import LeadStage
 from app.services import whatsapp
 
@@ -50,6 +50,9 @@ async def admin_monitor_page(
     _authorize_admin(x_admin_key, key)
 
     safe_key = html.escape(key or x_admin_key or "")
+    course_options = "\n".join(
+        f'<option value="{html.escape(slug)}">{html.escape(slug)}</option>' for slug in settings.course_slugs_list
+    )
     page = f"""
 <!doctype html>
 <html lang="pt-BR">
@@ -88,6 +91,8 @@ async def admin_monitor_page(
     .toolbar {{ padding:12px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:10; }}
     .toolbar-title {{ font-weight:700; margin-bottom:8px; font-size:14px; }}
     input[type="text"] {{ width:100%; padding:10px 12px; border:1px solid #cfd8e3; border-radius:10px; font-size:14px; }}
+    select {{ width:100%; padding:10px 12px; border:1px solid #cfd8e3; border-radius:10px; font-size:14px; background:#fff; }}
+    .toolbar-row {{ display:flex; flex-direction:column; gap:8px; }}
     .lead-item {{ padding:12px 14px; border-bottom:1px solid #f0f3f8; cursor:pointer; }}
     .lead-item:hover {{ background:#f8fbff; }}
     .lead-item.active {{ background:var(--brand-soft); border-left:3px solid var(--brand); padding-left:11px; }}
@@ -202,7 +207,13 @@ async def admin_monitor_page(
         <aside class="sidebar">
           <div class="toolbar">
             <div class="toolbar-title">Painel de Atendimento</div>
-            <input id="search" type="text" placeholder="Buscar por nome ou telefone" />
+            <div class="toolbar-row">
+              <input id="search" type="text" placeholder="Buscar por nome ou telefone" />
+              <select id="productTag">
+                <option value="">Todos os produtos</option>
+                {course_options}
+              </select>
+            </div>
           </div>
           <div id="leadList"></div>
         </aside>
@@ -308,7 +319,11 @@ async def admin_monitor_page(
   }}
 
   async function loadLeads() {{
-    const res = await fetch(`/admin/monitor/leads?key=${{encodeURIComponent(adminKey)}}`);
+    const productTag = document.getElementById("productTag")?.value || "";
+    let url = `/admin/monitor/leads?key=${{encodeURIComponent(adminKey)}}`;
+    if (productTag) url += `&product_tag=${{encodeURIComponent(productTag)}}`;
+
+    const res = await fetch(url);
     if (!res.ok) {{
       document.getElementById("leadList").innerHTML = `<div class='empty'>Erro ao carregar leads (${{res.status}})</div>`;
       return;
@@ -320,9 +335,13 @@ async def admin_monitor_page(
 
   function renderLeads() {{
     const q = document.getElementById("search").value.toLowerCase().trim();
+    const productTag = document.getElementById("productTag")?.value || "";
     const filtered = allLeads.filter(l =>
-      String(l.name || "").toLowerCase().includes(q) ||
-      String(l.phone_number || "").toLowerCase().includes(q)
+      (
+        String(l.name || "").toLowerCase().includes(q) ||
+        String(l.phone_number || "").toLowerCase().includes(q)
+      ) &&
+      (!productTag || String(l.course_slug || "") === productTag)
     );
 
     const htmlLeads = filtered.map(l => `
@@ -409,6 +428,7 @@ async def admin_monitor_page(
   }}
 
   document.getElementById("search").addEventListener("input", renderLeads);
+  document.getElementById("productTag").addEventListener("change", () => loadLeads());
   loadLeads();
   setInterval(loadLeads, 10000);
   setInterval(refreshOpenChat, 5000);
@@ -784,14 +804,18 @@ async def admin_monitor_page(
 async def admin_monitor_leads(
     x_admin_key: str | None = Header(default=None),
     key: str | None = Query(default=None),
+    product_tag: str | None = Query(default=None, description="Filtra pelo course_slug (ex.: pos_fisio_neuro)"),
 ):
     """Lista leads em atendimento com preview da última mensagem (dados do Redis)."""
     _authorize_admin(x_admin_key, key)
 
     leads_payload: list[dict] = []
+    product_tag_norm = (product_tag or "").strip()
 
     async for lead in iter_leads():
         if lead.stage in {LeadStage.CONVERTED, LeadStage.LOST}:
+            continue
+        if product_tag_norm and lead.course_slug.value != product_tag_norm:
             continue
 
         history = await get_history(lead.phone_number, last_n=1)
@@ -1190,17 +1214,18 @@ async def send_outbound_template(payload: OutboundTemplateRequest, x_admin_key: 
 async def pause_agent_for_lead(
     payload: PauseAgentRequest,
     x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
 ):
     """Pausar agente para um lead específico."""
-    _authorize_admin(x_admin_key)
+    _authorize_admin(x_admin_key, key)
 
     phone = payload.phone_number
-    lead = await get_history(phone, return_full_lead=True)
+    lead = await get_lead(phone)
 
     if not lead:
         raise HTTPException(status_code=404, detail=f"Lead {phone} não encontrado")
 
-    await update_lead_field(phone, "agent_paused", True)
+    await update_lead_field(phone, agent_paused=True)
     logger.info(f"⏸ Agent paused for {phone}")
 
     return {
@@ -1215,17 +1240,18 @@ async def pause_agent_for_lead(
 async def resume_agent_for_lead(
     payload: PauseAgentRequest,
     x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
 ):
     """Retomar agente para um lead específico."""
-    _authorize_admin(x_admin_key)
+    _authorize_admin(x_admin_key, key)
 
     phone = payload.phone_number
-    lead = await get_history(phone, return_full_lead=True)
+    lead = await get_lead(phone)
 
     if not lead:
         raise HTTPException(status_code=404, detail=f"Lead {phone} não encontrado")
 
-    await update_lead_field(phone, "agent_paused", False)
+    await update_lead_field(phone, agent_paused=False)
     logger.info(f"▶ Agent resumed for {phone}")
 
     return {
@@ -1245,7 +1271,7 @@ async def get_script_status(
     """Obter status do script em execução para um lead."""
     _authorize_admin(x_admin_key, key)
 
-    lead = await get_history(phone_number, return_full_lead=True)
+    lead = await get_lead(phone_number)
 
     if not lead:
         raise HTTPException(status_code=404, detail=f"Lead {phone_number} não encontrado")

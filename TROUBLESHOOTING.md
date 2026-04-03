@@ -422,6 +422,54 @@ docker-compose exec redis redis-cli DEL "script_lock:5511999999999"
 
 ---
 
+## 🔴 Problema: Lead não chega no agente (Webhook do SprintHub/CRM)
+
+### Sintomas
+- Lead se cadastra no site e aparece no SprintHub
+- O agente não envia a primeira mensagem/template
+- No monitor do agente, o lead não entra em “Nurturing”
+
+### Checklist rápido
+
+**1) URL do webhook**
+
+O endpoint correto do agente é:
+
+```
+POST https://SEU_DOMINIO/webhook/sprinthub
+```
+
+**2) Autorização (401 Unauthorized)**
+
+O webhook do CRM exige `APP_SECRET`. Envie **um** dos headers:
+- `X-Webhook-Key: <APP_SECRET>` (recomendado)
+- `Authorization: Bearer <APP_SECRET>` (fallback)
+
+**3) Corpo inválido (400 Invalid JSON / Empty body)**
+
+O agente espera JSON. Se houver middleware (ex.: Zapier/Make/n8n), confirme que ele está enviando JSON no body.
+
+**4) Lead ignorado (status=ignored)**
+
+Se o retorno do webhook vier como `ignored`, confira o motivo:
+- `missing_phone`: não encontrou telefone/WhatsApp no payload
+- `activation_not_matched`: não conseguiu mapear o curso/produto do lead
+
+**5) Logs do container**
+
+```bash
+docker-compose logs api | grep -i \"Webhook SprintHub\"
+docker-compose logs api | grep -i \"SprintHub ignorado\"
+```
+
+### Teste manual (recomendado)
+
+```bash
+APP_SECRET=seu-segredo-forte ./test_crm_webhook.sh http://localhost:8000 5511999999999 pos_fisio_neuro
+```
+
+---
+
 ## 🔴 Problema: Lead não aparece no SprintHub
 
 ### Sintomas

@@ -3,6 +3,7 @@ import re
 import unicodedata
 from datetime import timedelta
 from typing import Any
+from urllib.parse import parse_qs
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -31,6 +32,91 @@ def _unwrap_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if isinstance(nested, dict) and nested:
             return nested
     return payload
+
+
+def _extract_bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    parts = authorization.strip().split(None, 1)
+    if len(parts) != 2:
+        return None
+    scheme, token = parts[0], parts[1]
+    if scheme.lower() != "bearer":
+        return None
+    token = token.strip()
+    return token or None
+
+
+def _authorize_request(*, request: Request, x_webhook_key: str | None) -> None:
+    """
+    Autoriza o webhook do CRM.
+
+    Formas aceitas:
+    - Header `X-Webhook-Key: <APP_SECRET>` (recomendado)
+    - Header `Authorization: Bearer <APP_SECRET>` (fallback)
+    """
+    bearer = _extract_bearer_token(request.headers.get("authorization"))
+
+    if x_webhook_key == settings.app_secret:
+        return
+    if bearer == settings.app_secret:
+        return
+
+    logger.warning(
+        "❌ Webhook CRM não autorizado.",
+        path=str(request.url.path),
+        has_x_webhook_key=bool(x_webhook_key),
+        has_authorization=bool(request.headers.get("authorization")),
+        user_agent=request.headers.get("user-agent", ""),
+    )
+    raise HTTPException(
+        status_code=401,
+        detail="Unauthorized",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def _read_request_payload(request: Request) -> Any:
+    """
+    Lê o corpo do request de forma tolerante.
+
+    Alguns intermediários enviam JSON puro; outros mandam "payload=<json>" em
+    formato querystring. Aqui suportamos ambos sem exigir `python-multipart`.
+    """
+    try:
+        return await request.json()
+    except Exception:
+        body = await request.body()
+        text = body.decode("utf-8", errors="replace").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="Empty body")
+
+        # 1) Tenta JSON puro
+        try:
+            return json.loads(text)
+        except Exception:
+            pass
+
+        # 2) Tenta querystring (ex.: payload={...})
+        try:
+            qs = parse_qs(text, keep_blank_values=True)
+        except Exception:
+            qs = {}
+
+        for key in ("payload", "data", "body"):
+            values = qs.get(key) or []
+            if not values:
+                continue
+            candidate = (values[0] or "").strip()
+            if not candidate:
+                continue
+            try:
+                return json.loads(candidate)
+            except Exception:
+                continue
+
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
 
 def _normalize_phone(phone: str) -> str:
     digits = "".join(ch for ch in (phone or "") if ch.isdigit())
@@ -232,8 +318,14 @@ def _merge_notes_with_crm(existing_notes: str | None, crm_snapshot: dict[str, An
 
 
 def _authorize(webhook_key: str | None) -> None:
+    # Backwards compatibility: mantenha por enquanto (rotas antigas chamavam isso).
+    # A autorização atual é feita via `_authorize_request`.
     if webhook_key != settings.app_secret:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 @router.post("/sprinthub")
@@ -249,9 +341,10 @@ async def receive_sprinthub_webhook(
     - O agente é definido pelo nome do produto/curso recebido no payload.
     - Não depende de tags/segmentos.
     """
-    _authorize(x_webhook_key)
-    raw_payload = await request.json()
-    payload = _unwrap_payload(raw_payload)
+    _authorize_request(request=request, x_webhook_key=x_webhook_key)
+
+    raw_payload = await _read_request_payload(request)
+    payload = _unwrap_payload(raw_payload) if isinstance(raw_payload, dict) else {}
 
     logger.info(
         "📥 Webhook SprintHub recebido.",

@@ -239,6 +239,27 @@ Content-Type: application/json
 }
 
 ### ──────────────────────────────────────────────────────────
+### 9. Webhook do CRM (SprintHub → Agente) — Novo Lead
+### ──────────────────────────────────────────────────────────
+
+# Substitua o valor abaixo pelo mesmo `APP_SECRET` do seu .env
+@appSecret = dev-secret
+
+POST {{baseUrl}}/webhook/sprinthub
+Content-Type: application/json
+X-Webhook-Key: {{appSecret}}
+
+{
+  "lead": {
+    "whatsapp": "5511987654321",
+    "nome": "Lead do SprintHub"
+  },
+  "campos_customizados": {
+    "informacao05": "pos_fisio_neuro"
+  }
+}
+
+### ──────────────────────────────────────────────────────────
 ### NOTAS
 ### ──────────────────────────────────────────────────────────
 

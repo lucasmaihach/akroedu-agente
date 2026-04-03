@@ -132,6 +132,27 @@ ngrok http 8000
 
 ---
 
+## 🧩 Configurando o Webhook do CRM (SprintHub → Agente)
+
+Para o agente “pegar” um lead novo automaticamente (enviar a primeira mensagem/template), o SprintHub (ou o seu middleware de automação) precisa chamar o endpoint do agente:
+
+```
+POST https://seu-dominio.com/webhook/sprinthub
+```
+
+### Autorização (obrigatória)
+
+Envie **um** destes headers com o mesmo valor do seu `APP_SECRET`:
+
+- `X-Webhook-Key: <APP_SECRET>` (recomendado)
+- `Authorization: Bearer <APP_SECRET>` (fallback)
+
+### Teste rápido (manual)
+
+```bash
+APP_SECRET=seu-segredo-forte ./test_crm_webhook.sh https://seu-dominio.com 5511999999999 pos_fisio_neuro
+```
+
 ## 📚 Configurando os Cursos
 
 ### 1. Atualize os nomes dos cursos

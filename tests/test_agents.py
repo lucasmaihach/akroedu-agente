@@ -125,3 +125,59 @@ async def test_run_script_step_sends_content_and_advances(monkeypatch):
     assert updated.script_step == 1
     assert len(sent_texts) >= 2
     assert len(sent_audios) == 1
+
+
+@pytest.mark.asyncio
+async def test_script_active_pode_continuar_advances_without_out_of_faq(monkeypatch):
+    """
+    "pode continuar" é uma resposta afirmativa curta.
+    Não deve cair em _looks_like_question (ex.: por começar com "pode"),
+    nem disparar mensagem de "vou verificar" / notificação humana.
+    """
+    phone = "5511966667777"
+    lead = Lead(
+        phone_number=phone,
+        name="Lucas",
+        course_slug=CourseSlug.CURSO_1,
+        stage=LeadStage.NURTURING,
+        script_step=0,
+        last_received_msg_id="wamid_test",
+    )
+    await save_lead(lead)
+
+    async def fake_identify_course(*_args, **_kwargs):
+        return CourseSlug.CURSO_1
+
+    sent_texts: list[str] = []
+    notified: list[tuple[str, str]] = []
+
+    async def fake_send_text(*_args, **kwargs):
+        sent_texts.append(kwargs["text"])
+        return {"status": "ok"}
+
+    async def fake_notify_human_only(*_args, **kwargs):
+        notified.append((kwargs.get("reason", ""), kwargs.get("user_message", "")))
+        return None
+
+    # Força script ativo para CURSO_1
+    monkeypatch.setattr("app.agents.dispatcher.identify_course", fake_identify_course)
+    monkeypatch.setattr("app.agents.dispatcher.whatsapp.send_text", fake_send_text)
+    monkeypatch.setattr("app.agents.dispatcher.escalation.notify_human_only", fake_notify_human_only)
+    monkeypatch.setattr("app.agents.dispatcher.is_within_business_hours", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        "app.script.engine.SCRIPT_CONFIGS",
+        {CourseSlug.CURSO_1: {"price_reveal_step": 999, "price_skip_to_step": 0}},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.script.engine.SCRIPTS",
+        {CourseSlug.CURSO_1: [{"acolhimento_variations": ["Ok!"]}]},
+        raising=False,
+    )
+
+    should_advance, acolhimento = await dispatch(lead=lead, user_message="Pode continuar")
+
+    assert should_advance is True
+    assert acolhimento is None
+    assert sent_texts == []
+    assert notified == []

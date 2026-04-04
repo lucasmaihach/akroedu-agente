@@ -232,7 +232,9 @@ class BaseAgent:
             f"mudou de assunto ou não endereçou o que foi perguntado."
         )
         try:
-            history = await get_history(lead.phone_number, last_n=6)
+            # Usa mais histórico para reduzir respostas mecânicas e
+            # melhorar a leitura de contexto (ex.: "pode continuar").
+            history = await get_history(lead.phone_number, last_n=30)
             messages = history if history else [{"role": "user", "content": user_message}]
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
@@ -263,7 +265,7 @@ class BaseAgent:
         agent_name = getattr(self, "agent_name", "Taynara")
         system = _ACOLHIMENTO_SYSTEM.format(agent_name=agent_name, intent=intent)
         try:
-            history = await get_history(lead.phone_number, last_n=6)
+            history = await get_history(lead.phone_number, last_n=30)
             messages = history if history else [{"role": "user", "content": user_message}]
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",

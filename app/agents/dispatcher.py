@@ -33,10 +33,10 @@ _NAME_CORRECTION_PATTERNS = [
 ]
 
 _OUT_OF_FAQ_RESPONSES = [
-    "Vou verificar isso pra você e já te respondo! Enquanto isso, deixa eu te mandar mais algumas informações 😊",
-    "Boa pergunta! Vou checar esse detalhe e te respondo em breve. Mas enquanto isso, deixa eu continuar te contando sobre o curso 😊",
-    "Anotei sua dúvida aqui! Já vou verificar e te falo logo. Continua comigo que tenho mais coisas importantes pra te mostrar 😉",
-    "Entendido! Vou confirmar isso pra você com calma. Enquanto aguarda, deixa eu te passar mais detalhes do curso 😊",
+    "Entendi sua dúvida! Vou anotar aqui e te respondo direitinho. Enquanto isso, vou te mandar os próximos detalhes 😊",
+    "Boa pergunta! Já já eu te respondo certinho. Enquanto isso, vou seguir te mandando mais informações 😊",
+    "Perfeito, anotei sua pergunta aqui. Vou te responder com precisão já já — e vou seguir com os próximos pontos 😊",
+    "Entendi! Pra não te passar nada errado, vou te responder direitinho já já. Enquanto isso, sigo com mais detalhes 😊",
 ]
 
 # Rastreia o índice da última variação enviada por lead (evita repetição consecutiva).
@@ -198,6 +198,10 @@ def _is_social_greeting(text: str) -> bool:
 def _looks_like_question(text: str) -> bool:
     lower = text.lower().strip()
 
+    # Respostas curtas afirmativas ("pode continuar", "ok", "sim") não são perguntas.
+    if _is_simple_affirmative(lower):
+        return False
+
     # Saudações sociais com "?" não devem ser tratadas como perguntas técnicas.
     if "?" in lower and _is_social_greeting(lower):
         return False
@@ -209,8 +213,24 @@ def _looks_like_question(text: str) -> bool:
     if not tokens:
         return False
 
+    # "pode me X" frequentemente é pedido/pergunta mesmo sem "?":
+    # ex.: "pode me mandar a grade", "pode me explicar", "pode me dizer".
+    if tokens[0] == "pode" and len(tokens) >= 3 and tokens[1] in {"me", "nos"}:
+        action_terms = {
+            "mandar",
+            "enviar",
+            "passar",
+            "explicar",
+            "dizer",
+            "falar",
+            "mostrar",
+            "informar",
+        }
+        if any(t in action_terms for t in tokens[2:]):
+            return True
+
     # Começos de pergunta mais confiáveis (evita falso positivo em frases afirmativas).
-    question_starters = {"como", "quando", "quanto", "qual", "quais", "onde", "porque", "funciona", "posso", "pode", "precisa"}
+    question_starters = {"como", "quando", "quanto", "qual", "quais", "onde", "porque", "funciona", "posso", "precisa"}
     if tokens[0] in question_starters:
         return True
 
@@ -456,6 +476,18 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
         # Avisa o lead, notifica humano e continua o script normalmente.
         # O script não para — muitos leads fazem uma pergunta e somem se não receberem
         # mais conteúdo. O humano responde a dúvida em paralelo.
+        # ── RESPOSTA SIMPLES (camada 4a) ─────────────────────────────────────────
+        # "sim", "ok", "pode", "entendi", "faz sentido" etc.
+        # Não precisa de LLM — engine seleciona variação por hash.
+        if _is_simple_affirmative(user_message):
+            logger.info(
+                "✅ Resposta simples afirmativa — LLM ignorado, avançando script.",
+                phone=lead.phone_number,
+                step=lead.script_step,
+                message=user_message[:30],
+            )
+            return True, None
+
         if _looks_like_question(user_message):
             await whatsapp.send_text(
                 to=lead.phone_number,
@@ -470,18 +502,6 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                 "Pergunta fora do FAQ — lead avisado + humano notificado, script continua.",
                 phone=lead.phone_number,
                 step=lead.script_step,
-            )
-            return True, None
-
-        # ── RESPOSTA SIMPLES (camada 4a) ─────────────────────────────────────────
-        # "sim", "ok", "pode", "entendi", "faz sentido" etc.
-        # Não precisa de LLM — engine seleciona variação por hash.
-        if _is_simple_affirmative(user_message):
-            logger.info(
-                "✅ Resposta simples afirmativa — LLM ignorado, avançando script.",
-                phone=lead.phone_number,
-                step=lead.script_step,
-                message=user_message[:30],
             )
             return True, None
 

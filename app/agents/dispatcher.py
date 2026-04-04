@@ -16,6 +16,7 @@ from app.agents.courses.pos_fisio_neuro_faq import match_faq_response
 from app.utils.business_hours import is_within_business_hours, now_utc
 from app.jobs.store import schedule_faq_reply_resume
 from app.utils.gender_detection import adapt_gender_text, detect_gender_from_name
+from app.knowledge.base import load_knowledge
 
 logger = structlog.get_logger()
 
@@ -92,6 +93,40 @@ def _is_simple_affirmative(text: str) -> bool:
         return True
     # Frase curta (≤3 palavras) iniciada por palavra claramente afirmativa
     return len(words) <= 3 and words[0] in _SIMPLE_AFFIRMATIVE_STARTERS
+
+
+def _normalize_micro(text: str) -> str:
+    cleaned = _PUNCTUATION_RE.sub(" ", (text or "").lower().strip())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _is_continue_signal(text: str) -> bool:
+    """
+    Sinais de continuidade ("pode continuar", "segue", "manda", "pode seguir").
+    Isso não é pergunta técnica — é permissão para avançar no trilho.
+    """
+    t = _normalize_micro(text)
+    if not t:
+        return False
+    signals = {
+        "pode continuar",
+        "pode seguir",
+        "segue",
+        "continua",
+        "pode ir",
+        "vai",
+        "vamos",
+        "manda",
+        "pode mandar",
+        "pode enviar",
+        "pode sim",
+        "sim pode",
+        "sim",
+        "ok",
+        "certo",
+        "beleza",
+    }
+    return t in signals
 
 
 def _pick_variation(
@@ -488,28 +523,74 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
             )
             return True, None
 
-        if _looks_like_question(user_message):
-            await whatsapp.send_text(
-                to=lead.phone_number,
-                text=_pick_out_of_faq_response(lead.phone_number, lead.gender),
-            )
-            await escalation.notify_human_only(
-                lead=lead,
-                reason="Pergunta fora do FAQ durante script ativo",
-                user_message=user_message,
-            )
+        # Sinal claro de continuidade: força avanço sem cair em "pergunta fora do FAQ".
+        if _is_continue_signal(user_message):
             logger.info(
-                "Pergunta fora do FAQ — lead avisado + humano notificado, script continua.",
+                "➡️ Sinal de continuidade — avançando script.",
                 phone=lead.phone_number,
                 step=lead.script_step,
+                message=user_message[:40],
             )
             return True, None
+
+        if _looks_like_question(user_message):
+            # Tenta responder com segurança usando histórico + knowledge base.
+            knowledge = load_knowledge(getattr(agent, "course_slug", course.value))
+            current_question = _get_current_closing_question(lead, current_script) or _get_pending_engagement_question(lead, current_script)
+            decision = await agent.script_context_decision(
+                lead=lead,
+                user_message=user_message,
+                knowledge=knowledge,
+                current_question=current_question,
+            )
+
+            reply = (decision.get("reply") or "").strip()
+            can_answer = bool(decision.get("can_answer"))
+            should_advance = bool(decision.get("should_advance", True))
+            notify_human = bool(decision.get("notify_human", False))
+
+            # Barreira física contra vazamento de preço.
+            reply = output_guard.sanitize(reply) or ""
+            if can_answer and reply:
+                reply = adapt_gender_text(reply, lead.gender)
+                delay = whatsapp.estimate_typing_delay(reply)
+                await whatsapp.send_typing_and_wait(lead.last_received_msg_id or "", delay)
+                await whatsapp.send_text(to=lead.phone_number, text=reply)
+                logger.info(
+                    "Resposta contextual enviada durante script ativo.",
+                    phone=lead.phone_number,
+                    step=lead.script_step,
+                    notify_human=notify_human,
+                    should_advance=should_advance,
+                    decision_reason=decision.get("reason", ""),
+                )
+            else:
+                # Sem base segura: fallback + notifica humano.
+                fallback = _pick_out_of_faq_response(lead.phone_number, lead.gender)
+                await whatsapp.send_text(to=lead.phone_number, text=fallback)
+                notify_human = True
+                logger.info(
+                    "Pergunta fora do FAQ sem base segura — fallback enviado.",
+                    phone=lead.phone_number,
+                    step=lead.script_step,
+                    decision_reason=decision.get("reason", ""),
+                )
+
+            if notify_human:
+                await escalation.notify_human_only(
+                    lead=lead,
+                    reason="Pergunta fora do FAQ durante script ativo (decisão contextual)",
+                    user_message=user_message,
+                )
+
+            return should_advance, None
 
         # ── CLASSIFICAÇÃO (camada 4b) ────────────────────────────────────────────
         # Haiku classifica a intenção via tool_use (JSON garantido) e escolhe o
         # índice da variação de acolhimento pré-escrita que melhor combina com
         # o tom da mensagem — zero geração livre, zero risco de vazar preço.
-        classification = await agent.classify_intent(lead=lead, user_message=user_message)
+        current_question = _get_current_closing_question(lead, current_script) or _get_pending_engagement_question(lead, current_script)
+        classification = await agent.classify_intent(lead=lead, user_message=user_message, current_question=current_question)
         intent = classification.get("intent", "RESPOSTA_SCRIPT")
         advance_block = classification.get("advance_block", True)
         acolhimento_index = classification.get("acolhimento_index", None)

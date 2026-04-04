@@ -181,3 +181,14 @@ async def test_script_active_pode_continuar_advances_without_out_of_faq(monkeypa
     assert acolhimento is None
     assert sent_texts == []
     assert notified == []
+
+
+@pytest.mark.asyncio
+async def test_looks_like_question_pode_me_mandar_is_question(monkeypatch):
+    """
+    Protege contra o ajuste anterior: 'pode me mandar a grade' deve ser tratado como pergunta.
+    """
+    from app.agents.dispatcher import _looks_like_question
+
+    assert _looks_like_question("Pode me mandar a grade?") is True
+    assert _looks_like_question("Pode me mandar a grade") is True

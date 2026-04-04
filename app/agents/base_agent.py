@@ -7,6 +7,7 @@ from app.config import settings
 from app.models.lead import Lead, LeadStage
 from app.memory.session import (
     get_history,
+    get_history_persistent,
     update_lead_field,
 )
 from app.services import whatsapp, escalation
@@ -60,6 +61,30 @@ _CLASSIFY_TOOL = {
             },
         },
         "required": ["intent", "advance_block", "acolhimento_index"],
+    },
+}
+
+# ── Decisão contextual durante script ativo ──────────────────────────────────
+# Usado quando o lead faz uma pergunta fora do FAQ durante script ativo.
+# Retorna decisão estruturada para:
+# - responder curto e seguro (quando houver base explícita),
+# - ou escalar humano (quando não houver base).
+_SCRIPT_CONTEXT_TOOL = {
+    "name": "script_context",
+    "description": "Decide se é seguro responder e se o script deve avançar.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "can_answer": {"type": "boolean"},
+            "reply": {"type": "string"},
+            "should_advance": {
+                "type": "boolean",
+                "description": "true = pode seguir o trilho do script; false = não avance o bloco agora.",
+            },
+            "notify_human": {"type": "boolean"},
+            "reason": {"type": "string"},
+        },
+        "required": ["can_answer", "reply", "should_advance", "notify_human", "reason"],
     },
 }
 
@@ -212,7 +237,7 @@ class BaseAgent:
 
         return lead
 
-    async def classify_intent(self, lead: Lead, user_message: str) -> dict:
+    async def classify_intent(self, lead: Lead, user_message: str, current_question: str | None = None) -> dict:
         """
         Classifica a intenção da mensagem e decide se o bloco deve avançar.
 
@@ -226,15 +251,17 @@ class BaseAgent:
         system = (
             f"Você classifica mensagens de leads em um funil de vendas via WhatsApp.\n"
             f"Bloco atual do script: {lead.script_step}.\n\n"
+            f"Pergunta do script (se houver): {current_question or '[nenhuma]'}\n\n"
             f"advance_block = true: lead respondeu de forma engajada "
             f"(compartilhou algo relevante, disse sim/ok, demonstrou interesse).\n"
             f"advance_block = false: lead foi evasivo, deu resposta de 1-2 palavras vazias, "
             f"mudou de assunto ou não endereçou o que foi perguntado."
         )
         try:
-            # Usa mais histórico para reduzir respostas mecânicas e
-            # melhorar a leitura de contexto (ex.: "pode continuar").
-            history = await get_history(lead.phone_number, last_n=30)
+            # Usa histórico persistente (PostgreSQL) quando disponível para melhor contexto.
+            history = await get_history_persistent(lead.phone_number, last_n=80)
+            if not history:
+                history = await get_history(lead.phone_number, last_n=30)
             messages = history if history else [{"role": "user", "content": user_message}]
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
@@ -253,6 +280,77 @@ class BaseAgent:
         # Fallback seguro: assume que respondeu e avança
         return {"intent": "RESPOSTA_SCRIPT", "advance_block": True}
 
+    async def script_context_decision(
+        self,
+        *,
+        lead: Lead,
+        user_message: str,
+        knowledge: str,
+        current_question: str | None = None,
+    ) -> dict:
+        """
+        Decide se é seguro responder durante script ativo, usando histórico + knowledge.
+
+        Retorna dict com:
+          - can_answer: bool
+          - reply: str (curto)
+          - should_advance: bool
+          - notify_human: bool
+        """
+        system = (
+            "Você é um assistente de vendas com SCRIPT OBRIGATÓRIO.\n"
+            "Seu trabalho agora é decidir se dá para responder com segurança a mensagem do lead "
+            "durante o script ativo, SEM inventar nada.\n\n"
+            "FONTES PERMITIDAS (únicas):\n"
+            "1) Histórico da conversa fornecido.\n"
+            "2) Knowledge base fornecida.\n\n"
+            "REGRAS:\n"
+            "- Resposta deve ser curta (1–2 frases, no máximo 220 caracteres).\n"
+            "- Se a pergunta exigir dado que não está explícito nas fontes, marque can_answer=false e notify_human=true.\n"
+            "- Nunca chute, nunca suponha, nunca diga 'valores', 'promoções', datas, prazos ou links se isso não estiver nas fontes.\n"
+            "- Se a mensagem do lead não for pergunta crítica, normalmente should_advance=true (segue o script).\n"
+            "- Se o lead estiver confuso e precisar de confirmação antes de avançar, use should_advance=false.\n\n"
+            f"Pergunta do script (se houver): {current_question or '[nenhuma]'}\n"
+        )
+
+        kb = knowledge or ""
+        kb_prefix = f"\n\nKNOWLEDGE BASE:\n{kb}\n\n"
+        user_prefix = f"MENSAGEM ATUAL DO LEAD:\n{user_message}\n"
+
+        try:
+            history = await get_history_persistent(lead.phone_number, last_n=80)
+            if not history:
+                history = await get_history(lead.phone_number, last_n=30)
+            messages = history if history else [{"role": "user", "content": user_message}]
+
+            # Injeta KB e o "user_message" explicitamente no system, para reduzir
+            # risco de o modelo responder sem ancoragem.
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=220,
+                system=system + kb_prefix + user_prefix,
+                messages=messages,
+                tools=[_SCRIPT_CONTEXT_TOOL],
+                tool_choice={"type": "tool", "name": "script_context"},
+            )
+            for block in response.content:
+                if block.type == "tool_use" and block.name == "script_context":
+                    return block.input
+        except Exception as e:
+            logger.warning(
+                "Falha na decisão contextual do script — escalando por segurança.",
+                error=str(e),
+                phone=lead.phone_number,
+            )
+
+        return {
+            "can_answer": False,
+            "reply": "Entendi sua dúvida 😊 Pra não te passar nada errado, vou confirmar e já te respondo certinho.",
+            "should_advance": True,
+            "notify_human": True,
+            "reason": "fallback_error",
+        }
+
     async def generate_acolhimento(self, lead: Lead, user_message: str, intent: str = "RESPOSTA_SCRIPT") -> Optional[str]:
         """
         Gera 1 frase curta de acolhimento durante script ativo.
@@ -265,7 +363,9 @@ class BaseAgent:
         agent_name = getattr(self, "agent_name", "Taynara")
         system = _ACOLHIMENTO_SYSTEM.format(agent_name=agent_name, intent=intent)
         try:
-            history = await get_history(lead.phone_number, last_n=30)
+            history = await get_history_persistent(lead.phone_number, last_n=30)
+            if not history:
+                history = await get_history(lead.phone_number, last_n=30)
             messages = history if history else [{"role": "user", "content": user_message}]
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",

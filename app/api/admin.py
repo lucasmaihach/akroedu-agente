@@ -93,6 +93,8 @@ async def admin_monitor_page(
     input[type="text"] {{ width:100%; padding:10px 12px; border:1px solid #cfd8e3; border-radius:10px; font-size:14px; }}
     select {{ width:100%; padding:10px 12px; border:1px solid #cfd8e3; border-radius:10px; font-size:14px; background:#fff; }}
     .toolbar-row {{ display:flex; flex-direction:column; gap:8px; }}
+    .toolbar-check {{ display:flex; gap:8px; align-items:center; font-size:12px; color:var(--muted); user-select:none; }}
+    .toolbar-check input {{ width:auto; }}
     .lead-item {{ padding:12px 14px; border-bottom:1px solid #f0f3f8; cursor:pointer; }}
     .lead-item:hover {{ background:#f8fbff; }}
     .lead-item.active {{ background:var(--brand-soft); border-left:3px solid var(--brand); padding-left:11px; }}
@@ -213,6 +215,10 @@ async def admin_monitor_page(
                 <option value="">Todos os produtos</option>
                 {course_options}
               </select>
+              <label class="toolbar-check">
+                <input type="checkbox" id="includeClosed" checked />
+                Mostrar convertidos/perdidos
+              </label>
             </div>
           </div>
           <div id="leadList"></div>
@@ -326,7 +332,8 @@ async def admin_monitor_page(
 
   async function loadLeads() {{
     const productTag = document.getElementById("productTag")?.value || "";
-    let url = `/admin/monitor/leads?key=${{encodeURIComponent(adminKey)}}`;
+    const includeClosed = document.getElementById("includeClosed")?.checked ? "1" : "0";
+    let url = `/admin/monitor/leads?key=${{encodeURIComponent(adminKey)}}&include_closed=${{includeClosed}}`;
     if (productTag) url += `&product_tag=${{encodeURIComponent(productTag)}}`;
 
     const res = await fetch(url);
@@ -504,6 +511,7 @@ async def admin_monitor_page(
 
   document.getElementById("search").addEventListener("input", renderLeads);
   document.getElementById("productTag").addEventListener("change", () => loadLeads());
+  document.getElementById("includeClosed").addEventListener("change", () => loadLeads());
   loadLeads();
   setInterval(loadLeads, 10000);
   setInterval(refreshOpenChat, 5000);
@@ -880,6 +888,7 @@ async def admin_monitor_leads(
     x_admin_key: str | None = Header(default=None),
     key: str | None = Query(default=None),
     product_tag: str | None = Query(default=None, description="Filtra pelo course_slug (ex.: pos_fisio_neuro)"),
+    include_closed: bool = Query(default=True, description="Inclui leads convertidos/perdidos no resultado."),
 ):
     """Lista leads em atendimento com preview da última mensagem (dados do Redis)."""
     _authorize_admin(x_admin_key, key)
@@ -888,12 +897,14 @@ async def admin_monitor_leads(
     product_tag_norm = (product_tag or "").strip()
 
     async for lead in iter_leads():
-        if lead.stage in {LeadStage.CONVERTED, LeadStage.LOST}:
+        if not include_closed and lead.stage in {LeadStage.CONVERTED, LeadStage.LOST}:
             continue
         if product_tag_norm and lead.course_slug.value != product_tag_norm:
             continue
 
         history = await get_history(lead.phone_number, last_n=1)
+        if not history:
+            history = await get_history_persistent(lead.phone_number, last_n=1)
         last_msg_raw = history[-1].get("content", "") if history else ""
         last_msg = last_msg_raw if isinstance(last_msg_raw, str) else str(last_msg_raw)
 

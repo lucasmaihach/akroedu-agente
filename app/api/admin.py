@@ -791,9 +791,9 @@ async def admin_monitor_page(
   // ─────────────────────────────────────
 
   const originalOpenChat = openChat;
-  openChat = async function(phone) {{
-    originalOpenChat(phone);
-    loadScriptStatus();
+  openChat = async function(phone, preserveScroll=false) {{
+    await originalOpenChat(phone, preserveScroll);
+    await loadScriptStatus();
   }};
 
   // ─────────────────────────────────────

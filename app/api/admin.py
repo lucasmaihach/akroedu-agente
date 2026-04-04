@@ -278,6 +278,8 @@ async def admin_monitor_page(
   let selectedPhone = null;
   let pauseLiveRefresh = false;
   let lastChatFingerprint = "";
+  let renderedChatCount = 0;
+  let renderedLastTs = "";
 
   const SCROLL_STICKY_THRESHOLD_PX = 140;
 
@@ -384,8 +386,42 @@ async def admin_monitor_page(
     return esc(c);
   }}
 
+  function renderMessageHtml(m) {{
+    return `
+      <div class="msg-row ${{m.role === 'assistant' ? 'assistant' : 'user'}}">
+        <div class="bubble-wrap">
+          <div class="${{bubbleClass(m.content, m.role)}}">${{renderContent(m.content)}}</div>
+          ${{m.timestamp ? `<span class="msg-time">${{fmtTime(m.timestamp)}}</span>` : ""}}
+        </div>
+      </div>
+    `;
+  }}
+
+  function renderChatFull(messages) {{
+    renderedChatCount = messages.length;
+    renderedLastTs = messages.length ? (messages[messages.length - 1].timestamp || "") : "";
+    document.getElementById("chatBody").innerHTML = messages.map(renderMessageHtml).join("");
+  }}
+
+  function appendChatDelta(messages) {{
+    if (!messages.length) return;
+    const start = Math.max(0, renderedChatCount);
+    if (start >= messages.length) return;
+
+    const body = document.getElementById("chatBody");
+    const chunk = messages.slice(start).map(renderMessageHtml).join("");
+    body.insertAdjacentHTML("beforeend", chunk);
+    renderedChatCount = messages.length;
+    renderedLastTs = messages[messages.length - 1].timestamp || renderedLastTs;
+  }}
+
   async function openChat(phone, preserveScroll=false) {{
     selectedPhone = phone;
+    if (!preserveScroll) {{
+      renderedChatCount = 0;
+      renderedLastTs = "";
+      lastChatFingerprint = "";
+    }}
     renderLeads();
 
     const body = document.getElementById("chatBody");
@@ -417,17 +453,26 @@ async def admin_monitor_page(
 
     if (!messages.length) {{
       document.getElementById("chatBody").innerHTML = "<div class='empty'>Sem histórico para este lead.</div>";
+      renderedChatCount = 0;
+      renderedLastTs = "";
       return;
     }}
 
-    document.getElementById("chatBody").innerHTML = messages.map(m => `
-      <div class="msg-row ${{m.role === 'assistant' ? 'assistant' : 'user'}}">
-        <div class="bubble-wrap">
-          <div class="${{bubbleClass(m.content, m.role)}}">${{renderContent(m.content)}}</div>
-          ${{m.timestamp ? `<span class="msg-time">${{fmtTime(m.timestamp)}}</span>` : ""}}
-        </div>
-      </div>
-    `).join("");
+    // Render incremental: se já temos uma conversa renderizada, só anexamos o delta.
+    // Isso elimina travadas e evita o navegador "puxar" o scroll pro fim.
+    const isSameChat = String(lead.phone_number || "") === String(selectedPhone || phone);
+    const canAppendDelta =
+      preserveScroll &&
+      isSameChat &&
+      renderedChatCount > 0 &&
+      messages.length >= renderedChatCount &&
+      (messages.length - renderedChatCount) <= 30;
+
+    if (canAppendDelta) {{
+      appendChatDelta(messages);
+    }} else {{
+      renderChatFull(messages);
+    }}
 
     if (shouldStickBottom) {{
       body.scrollTop = body.scrollHeight;

@@ -277,6 +277,7 @@ async def admin_monitor_page(
   let allLeads = [];
   let selectedPhone = null;
   let pauseLiveRefresh = false;
+  let lastChatFingerprint = "";
 
   const SCROLL_STICKY_THRESHOLD_PX = 140;
 
@@ -391,6 +392,7 @@ async def admin_monitor_page(
     const distanceFromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
     const shouldStickBottom = preserveScroll ? (distanceFromBottom < SCROLL_STICKY_THRESHOLD_PX) : true;
     const prevScrollTop = body.scrollTop;
+    const prevScrollHeight = body.scrollHeight;
 
     const res = await fetch(`/admin/monitor/history/${{encodeURIComponent(phone)}}?key=${{encodeURIComponent(adminKey)}}`);
     if (!res.ok) {{
@@ -404,6 +406,14 @@ async def admin_monitor_page(
 
     document.getElementById("chatHeader").innerText = `${{lead.name || "Lead sem nome"}}`;
     document.getElementById("chatSubHeader").innerText = `${{lead.phone_number || ""}} • ${{lead.course_slug || ""}} • ${{stageLabel(lead.stage || "")}}`;
+
+    // Se não houve mudança, não re-renderiza (evita travada e pulo de scroll).
+    const last = messages.length ? messages[messages.length - 1] : null;
+    const fingerprint = `${{lead.phone_number || phone}}:${{messages.length}}:${{last?.timestamp || ""}}:${{String(last?.content || "").slice(0, 24)}}`;
+    if (preserveScroll && fingerprint === lastChatFingerprint) {{
+      return;
+    }}
+    lastChatFingerprint = fingerprint;
 
     if (!messages.length) {{
       document.getElementById("chatBody").innerHTML = "<div class='empty'>Sem histórico para este lead.</div>";
@@ -422,13 +432,18 @@ async def admin_monitor_page(
     if (shouldStickBottom) {{
       body.scrollTop = body.scrollHeight;
     }} else if (preserveScroll) {{
-      // Mantém a posição do usuário ao reler histórico (evita "pular" para o fim).
-      body.scrollTop = prevScrollTop;
+      // Mantém a posição do usuário ao reler histórico:
+      // preserva o mesmo offset relativo conforme o conteúdo cresce.
+      const newScrollHeight = body.scrollHeight;
+      body.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
     }}
   }}
 
   function refreshOpenChat() {{
     if (selectedPhone) {{
+      const body = document.getElementById("chatBody");
+      const distanceFromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+      if (distanceFromBottom > SCROLL_STICKY_THRESHOLD_PX) return;
       if (pauseLiveRefresh) return;
       openChat(selectedPhone, true);
     }}

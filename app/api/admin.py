@@ -276,6 +276,9 @@ async def admin_monitor_page(
   const adminKey = "{safe_key}";
   let allLeads = [];
   let selectedPhone = null;
+  let pauseLiveRefresh = false;
+
+  const SCROLL_STICKY_THRESHOLD_PX = 140;
 
   const STAGE_PT = {{
     "new": "Novo",
@@ -385,9 +388,9 @@ async def admin_monitor_page(
     renderLeads();
 
     const body = document.getElementById("chatBody");
-    const shouldStickBottom = preserveScroll
-      ? (body.scrollHeight - body.scrollTop - body.clientHeight) < 120
-      : true;
+    const distanceFromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+    const shouldStickBottom = preserveScroll ? (distanceFromBottom < SCROLL_STICKY_THRESHOLD_PX) : true;
+    const prevScrollTop = body.scrollTop;
 
     const res = await fetch(`/admin/monitor/history/${{encodeURIComponent(phone)}}?key=${{encodeURIComponent(adminKey)}}`);
     if (!res.ok) {{
@@ -418,14 +421,26 @@ async def admin_monitor_page(
 
     if (shouldStickBottom) {{
       body.scrollTop = body.scrollHeight;
+    }} else if (preserveScroll) {{
+      // Mantém a posição do usuário ao reler histórico (evita "pular" para o fim).
+      body.scrollTop = prevScrollTop;
     }}
   }}
 
   function refreshOpenChat() {{
     if (selectedPhone) {{
+      if (pauseLiveRefresh) return;
       openChat(selectedPhone, true);
     }}
   }}
+
+  // Se o usuário estiver scrollando para ler mensagens antigas, pause o refresh ao vivo.
+  // O refresh volta automaticamente quando ele rolar de volta para perto do final.
+  document.getElementById("chatBody").addEventListener("scroll", () => {{
+    const body = document.getElementById("chatBody");
+    const distanceFromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+    pauseLiveRefresh = distanceFromBottom > SCROLL_STICKY_THRESHOLD_PX;
+  }});
 
   document.getElementById("search").addEventListener("input", renderLeads);
   document.getElementById("productTag").addEventListener("change", () => loadLeads());

@@ -890,8 +890,67 @@ async def admin_monitor_leads(
     product_tag: str | None = Query(default=None, description="Filtra pelo course_slug (ex.: pos_fisio_neuro)"),
     include_closed: bool = Query(default=True, description="Inclui leads convertidos/perdidos no resultado."),
 ):
-    """Lista leads em atendimento com preview da última mensagem (dados do Redis)."""
+    """Lista leads para o painel (fonte primária: PostgreSQL; fallback: Redis)."""
     _authorize_admin(x_admin_key, key)
+
+    # Fonte primária: PostgreSQL (durável). Redis pode expirar chaves e esconder leads.
+    try:
+        from sqlalchemy import select
+        from app.db.database import AsyncSessionLocal
+        from app.db.orm_models import LeadORM, ConversationORM
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(LeadORM)
+            if product_tag:
+                stmt = stmt.where(LeadORM.course_slug == str(product_tag))
+            if not include_closed:
+                stmt = stmt.where(LeadORM.stage.not_in(["converted", "lost"]))
+
+            result = await session.execute(stmt)
+            lead_rows = list(result.scalars().all())
+
+            leads_payload: list[dict] = []
+            for row in lead_rows:
+                # Preview: última mensagem persistida (pode ser vazio se nunca houve chat).
+                last_preview = ""
+                try:
+                    last_msg_res = await session.execute(
+                        select(ConversationORM.content)
+                        .where(ConversationORM.phone_number == row.phone_number)
+                        .order_by(ConversationORM.created_at.desc())
+                        .limit(1)
+                    )
+                    last_preview = (last_msg_res.scalar_one_or_none() or "") if last_msg_res else ""
+                except Exception:
+                    last_preview = ""
+
+                preview = str(last_preview or "")
+                leads_payload.append(
+                    {
+                        "phone_number": row.phone_number,
+                        "name": row.name,
+                        "course_slug": row.course_slug,
+                        "stage": row.stage,
+                        "script_step": row.script_step,
+                        "is_escalated": bool(row.is_escalated),
+                        "followup_status": row.followup_status,
+                        "last_inbound_at": _format_dt(row.last_inbound_at),
+                        "last_message_preview": (preview[:120] + "...") if len(preview) > 120 else preview,
+                    }
+                )
+
+        leads_payload.sort(
+            key=lambda item: (
+                item.get("is_escalated", False),
+                item.get("followup_status") == "running",
+                item.get("last_inbound_at") or "",
+            ),
+            reverse=True,
+        )
+
+        return {"count": len(leads_payload), "leads": leads_payload}
+    except Exception as e:
+        logger.warning("Falha ao listar leads via PostgreSQL — tentando fallback Redis.", error=str(e))
 
     leads_payload: list[dict] = []
     product_tag_norm = (product_tag or "").strip()

@@ -48,6 +48,8 @@ class Settings(BaseSettings):
 
     # ── Escalação ───────────────────────────────────────────
     escalation_whatsapp_number: str
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
 
     # ── Cursos ──────────────────────────────────────────────
     course_slugs: str = "curso_1,curso_2,pos_fisio_neuro"

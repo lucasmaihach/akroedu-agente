@@ -2,7 +2,7 @@ import structlog
 from app.config import settings
 from app.models.lead import Lead, LeadStage
 from app.memory.session import update_lead_field, save_lead
-from app.services import whatsapp, crm
+from app.services import whatsapp, crm, ops_alert
 
 logger = structlog.get_logger()
 
@@ -36,18 +36,9 @@ def should_escalate_by_message(text: str) -> bool:
 
 async def notify_human_only(lead: Lead, reason: str, user_message: str = "") -> None:
     """
-    Apenas notifica o número humano via WhatsApp, sem alterar estágio do lead.
+    Apenas notifica o canal interno de operações (Telegram), sem alterar estágio do lead.
     Útil para perguntas não mapeadas durante script ativo.
     """
-    if not settings.escalation_whatsapp_number:
-        logger.warning("ESCALATION_WHATSAPP_NUMBER não configurado, aviso não foi enviado.")
-        return
-
-    escalation_to = _normalize_phone(settings.escalation_whatsapp_number)
-    if not escalation_to:
-        logger.warning("ESCALATION_WHATSAPP_NUMBER inválido após normalização.")
-        return
-
     alert_message = (
         f"🟡 *Lead com pergunta para atendimento humano*\n\n"
         f"📱 *Número:* +{lead.phone_number}\n"
@@ -58,16 +49,12 @@ async def notify_human_only(lead: Lead, reason: str, user_message: str = "") -> 
         f"❓ *Pergunta:* {user_message or '(não informado)'}"
     )
 
-    try:
-        await whatsapp.send_text(
-            to=escalation_to,
-            text=alert_message,
-        )
-    except Exception as e:
-        logger.error(
-            "Falha ao enviar notificação humana (notify_human_only).",
-            to=escalation_to,
-            error=str(e),
+    delivered = await ops_alert.send_internal_alert(alert_message)
+    if not delivered:
+        logger.warning(
+            "Notificação interna não enviada (Telegram indisponível ou não configurado).",
+            phone=lead.phone_number,
+            reason=reason,
         )
 
 

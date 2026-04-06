@@ -79,6 +79,35 @@ _SIMPLE_AFFIRMATIVE_STARTERS = {
     "show", "top", "boa", "otimo", "ótimo",
 }
 
+_QUESTION_STEM_HINTS = {
+    "quanto",
+    "qual",
+    "quais",
+    "como",
+    "quando",
+    "onde",
+    "porque",
+    "por que",
+    "valor",
+    "preco",
+    "preço",
+    "instagram",
+    "modulo",
+    "módulo",
+}
+
+_CONTINUE_HINTS = {
+    "continua",
+    "continuar",
+    "seguir",
+    "segue",
+    "prosseguir",
+    "avancar",
+    "avançar",
+    "manda",
+    "enviar",
+}
+
 
 def _is_simple_affirmative(text: str) -> bool:
     """
@@ -126,7 +155,25 @@ def _is_continue_signal(text: str) -> bool:
         "certo",
         "beleza",
     }
-    return t in signals
+    if t in signals:
+        return True
+
+    # Cobertura para confirmações curtas com pequenas variações:
+    # "sim pode continuar", "pode seguir então", "ok, manda".
+    words = t.split()
+    if not words:
+        return False
+
+    if "?" in (text or ""):
+        return False
+
+    has_continue_hint = any(w in _CONTINUE_HINTS for w in words)
+    has_affirmative_start = words[0] in _SIMPLE_AFFIRMATIVE_STARTERS
+    has_question_hint = any(h in t for h in _QUESTION_STEM_HINTS)
+
+    return (has_continue_hint and has_affirmative_start and not has_question_hint) or (
+        len(words) <= 4 and has_continue_hint and not has_question_hint
+    )
 
 
 def _pick_variation(

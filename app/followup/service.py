@@ -61,6 +61,12 @@ C2_TEMPLATE_NAMES = [
     "akro_posneuro_c2_d8",
 ]
 
+_FOLLOWUP_CLOSING_HINTS = (
+    "encerro por aqui por enquanto",
+    "quando quiser retomar",
+    "te atendo com prioridade",
+)
+
 
 def _first_name(lead: Lead) -> str | None:
     if not lead.name:
@@ -141,6 +147,11 @@ def _template_name(scenario: str, step: int) -> str:
 def _followup_dedup_key(lead: Lead, scenario: str, step: int, channel: str) -> str:
     session_anchor = lead.followup_started_at.isoformat() if lead.followup_started_at else "na"
     return f"followup:{lead.phone_number}:{session_anchor}:{scenario}:step:{step}:{channel}"
+
+
+def _is_followup_closing_message(text: str) -> bool:
+    lower = (text or "").lower()
+    return all(hint in lower for hint in _FOLLOWUP_CLOSING_HINTS)
 
 
 async def stop_followup_on_inbound(lead: Lead, user_message: str) -> None:
@@ -364,6 +375,20 @@ async def _process_one(lead: Lead) -> None:
             text = adapt_gender_text(text, lead.gender)
             dedup_key = _followup_dedup_key(lead, scenario, step, "text")
             await whatsapp.send_text(to=lead.phone_number, text=text, dedup_key=dedup_key)
+
+            # Se enviamos a mensagem explícita de encerramento, finaliza imediatamente
+            # para não continuar rodando templates D+ depois do "encerro por aqui".
+            if _is_followup_closing_message(text):
+                await update_lead_field(
+                    lead.phone_number,
+                    followup_status="finished",
+                    followup_finished_at=now,
+                    followup_next_at=None,
+                    followup_stopped_reason="closing_message_sent",
+                    notes="followup encerrado após mensagem final",
+                )
+                logger.info("✅ Régua de follow-up finalizada por mensagem de encerramento.", phone=lead.phone_number, scenario=scenario)
+                return
 
         if step >= _final_step_index(scenario):
             await update_lead_field(

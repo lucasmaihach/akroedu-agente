@@ -270,7 +270,7 @@ async def admin_monitor_page(
         <label>Até</label>
         <input type="date" id="filterTo" />
         <button class="btn-refresh" id="btnRefresh" onclick="loadReport()">↻ Atualizar</button>
-        <button class="btn-refresh" style="background:#0f766e" onclick="exportReport()">⬇ Exportar conversas</button>
+        <button class="btn-refresh" style="background:#0f766e" onclick="exportReport()">⬇ Exportar conversas (Fisio)</button>
       </div>
       <div class="report-wrap" id="reportWrap">
         <div class="empty">Abra a aba para carregar o relatório.</div>
@@ -697,11 +697,8 @@ async def admin_monitor_page(
   }}
 
   function exportReport() {{
-    const from = document.getElementById("filterFrom")?.value || "";
-    const to   = document.getElementById("filterTo")?.value || "";
-    let url = `/admin/monitor/export?key=${{encodeURIComponent(adminKey)}}`;
-    if (from) url += `&date_from=${{encodeURIComponent(from)}}`;
-    if (to)   url += `&date_to=${{encodeURIComponent(to)}}`;
+    // Exportação dedicada: todas as conversas de cursos de fisioterapia.
+    let url = `/admin/monitor/export?key=${{encodeURIComponent(adminKey)}}&course_prefix=pos_fisio`;
     window.location.href = url;
   }}
 
@@ -1211,6 +1208,8 @@ async def admin_export_conversations(
     key: str | None = Query(default=None),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
+    course_slug: str | None = Query(default=None, description="Filtra por curso (ex.: pos_fisio_neuro)"),
+    course_prefix: str | None = Query(default=None, description="Filtra por prefixo de curso (ex.: pos_fisio)"),
 ):
     """Gera relatório de conversas em texto plano, filtrável por data."""
     _authorize_admin(x_admin_key, key)
@@ -1252,7 +1251,20 @@ async def admin_export_conversations(
             return False
         return True
 
-    all_leads = [lead async for lead in iter_leads() if _in_range(lead)]
+    normalized_course = (course_slug or "").strip().lower()
+    normalized_prefix = (course_prefix or "").strip().lower()
+
+    def _match_course(lead) -> bool:
+        lead_course = str(getattr(lead.course_slug, "value", lead.course_slug)).lower()
+        if normalized_course and lead_course != normalized_course:
+            return False
+        if normalized_prefix and not lead_course.startswith(normalized_prefix):
+            return False
+        if not normalized_course and not normalized_prefix:
+            return True
+        return True
+
+    all_leads = [lead async for lead in iter_leads() if _in_range(lead) and _match_course(lead)]
     all_leads.sort(
         key=lambda l: (l.last_inbound_at or datetime.min.replace(tzinfo=timezone.utc)),
         reverse=True,
@@ -1260,11 +1272,12 @@ async def admin_export_conversations(
 
     now_str = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M")
     period  = f"{date_from or 'início'} → {date_to or 'hoje'}" if (date_from or date_to) else "Todos os períodos"
+    course_label = normalized_course or (f"{normalized_prefix}*" if normalized_prefix else "todos")
 
     lines: list[str] = []
     lines.append("=" * 80)
     lines.append(f"RELATÓRIO DE CONVERSAS — gerado em {now_str} UTC")
-    lines.append(f"Período: {period}  |  Total de leads: {len(all_leads)}")
+    lines.append(f"Período: {period}  |  Curso: {course_label}  |  Total de leads: {len(all_leads)}")
     lines.append("=" * 80)
 
     for idx, lead in enumerate(all_leads, start=1):

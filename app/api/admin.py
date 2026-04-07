@@ -913,9 +913,9 @@ async def admin_monitor_page(
       const date = fu.scheduled_at ? fmtTime(fu.scheduled_at) : "---";
       let statusBadge = "---";
 
-      if (fu.status === 'active' || fu.status === 'waiting' || fu.status === 'pending') {{
+      if (fu.status === 'active' || fu.status === 'waiting' || fu.status === 'pending' || fu.status === 'running') {{
         statusBadge = '<span class="fu-status-badge pending">✅ Pendente</span>';
-      }} else if (fu.status === 'sent' || fu.status === 'completed') {{
+      }} else if (fu.status === 'sent' || fu.status === 'completed' || fu.status === 'finished' || fu.status === 'stopped') {{
         statusBadge = '<span class="fu-status-badge sent">📤 Enviado</span>';
       }} else if (fu.status === 'failed') {{
         statusBadge = '<span class="fu-status-badge failed">❌ Falhou</span>';
@@ -1709,15 +1709,19 @@ async def get_scheduled_followups(
         fu_status = lead.followup_status or "idle"
         fu_next_at = lead.followup_next_at
 
+        pending_statuses = {"active", "waiting", "pending", "running"}
+        sent_statuses = {"sent", "completed", "finished", "stopped"}
+        failed_statuses = {"failed"}
+
         # Filtrar por status
-        if status == "pending" and fu_status not in ["active", "waiting"]:
+        if status == "pending" and fu_status not in pending_statuses:
             continue
-        if status == "sent" and fu_status != "completed":
+        if status == "sent" and fu_status not in sent_statuses:
             continue
-        if status == "failed" and fu_status != "failed":
+        if status == "failed" and fu_status not in failed_statuses:
             continue
 
-        if fu_status in ["active", "waiting", "completed", "failed"]:
+        if fu_status in (pending_statuses | sent_statuses | failed_statuses):
             followups.append({
                 "phone": lead.phone_number,
                 "name": lead.name,

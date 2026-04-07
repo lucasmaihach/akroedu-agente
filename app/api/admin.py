@@ -1083,19 +1083,25 @@ async def admin_monitor_stats(
     dt_from = _parse_date(date_from)
     dt_to   = _parse_date(date_to, end_of_day=True)
 
+    phones_in_range: set[str] | None = None
+    if dt_from is not None or dt_to is not None:
+        phones_in_range = set()
+        try:
+            async with AsyncSessionLocal() as session:
+                stmt = select(ConversationORM.phone_number).distinct()
+                if dt_from is not None:
+                    stmt = stmt.where(ConversationORM.created_at >= dt_from)
+                if dt_to is not None:
+                    stmt = stmt.where(ConversationORM.created_at <= dt_to)
+                result = await session.execute(stmt)
+                phones_in_range = {row[0] for row in result.fetchall()}
+        except Exception:
+            phones_in_range = set()
+
     def _in_range(lead) -> bool:
-        if dt_from is None and dt_to is None:
+        if phones_in_range is None:
             return True
-        ref = lead.last_inbound_at
-        if ref is None:
-            return False
-        if ref.tzinfo is None:
-            ref = ref.replace(tzinfo=timezone.utc)
-        if dt_from and ref < dt_from:
-            return False
-        if dt_to and ref > dt_to:
-            return False
-        return True
+        return lead.phone_number in phones_in_range
 
     # ── Coleta todos os leads ────────────────────────────────────────────────
     all_leads = [lead async for lead in iter_leads() if _in_range(lead)]
@@ -1139,11 +1145,16 @@ async def admin_monitor_stats(
     # ── Leads que receberam pelo menos 1 resposta do agente ─────────────────
     try:
         async with AsyncSessionLocal() as session:
-            result = await session.execute(
+            stmt = (
                 select(ConversationORM.phone_number)
                 .where(ConversationORM.role == "assistant")
                 .distinct()
             )
+            if dt_from is not None:
+                stmt = stmt.where(ConversationORM.created_at >= dt_from)
+            if dt_to is not None:
+                stmt = stmt.where(ConversationORM.created_at <= dt_to)
+            result = await session.execute(stmt)
             phones_with_response = {row[0] for row in result.fetchall()}
     except Exception:
         phones_with_response = set()

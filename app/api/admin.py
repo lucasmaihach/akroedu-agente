@@ -1001,6 +1001,7 @@ async def admin_monitor_leads(
 
             result = await session.execute(stmt)
             lead_rows = list(result.scalars().all())
+            lead_phones = {row.phone_number for row in lead_rows}
 
             leads_payload: list[dict] = []
             for row in lead_rows:
@@ -1031,6 +1032,42 @@ async def admin_monitor_leads(
                         "last_message_preview": (preview[:120] + "...") if len(preview) > 120 else preview,
                     }
                 )
+
+            # Robustez: se houver conversas sem registro em leads, ainda mostra no painel.
+            # Isso evita "sumiço" visual quando o cadastro do lead está inconsistente.
+            if not product_tag:
+                phones_stmt = select(ConversationORM.phone_number).distinct()
+                conversation_phones = (await session.execute(phones_stmt)).scalars().all()
+                orphan_phones = [p for p in conversation_phones if p and p not in lead_phones]
+
+                for phone in orphan_phones:
+                    try:
+                        last_msg_res = await session.execute(
+                            select(ConversationORM.content, ConversationORM.created_at)
+                            .where(ConversationORM.phone_number == phone)
+                            .order_by(ConversationORM.created_at.desc())
+                            .limit(1)
+                        )
+                        last_row = last_msg_res.first()
+                        last_preview = str((last_row[0] if last_row else "") or "")
+                        last_at = last_row[1] if last_row else None
+                    except Exception:
+                        last_preview = ""
+                        last_at = None
+
+                    leads_payload.append(
+                        {
+                            "phone_number": phone,
+                            "name": "Lead sem cadastro",
+                            "course_slug": "unknown",
+                            "stage": "new",
+                            "script_step": 0,
+                            "is_escalated": False,
+                            "followup_status": "idle",
+                            "last_inbound_at": _format_dt(last_at),
+                            "last_message_preview": (last_preview[:120] + "...") if len(last_preview) > 120 else last_preview,
+                        }
+                    )
 
         leads_payload.sort(
             key=lambda item: (
@@ -1099,12 +1136,13 @@ async def admin_monitor_history(
     resolved_phone = await resolve_lead_phone(clean_phone)
     lead_found = await get_lead(resolved_phone)
 
-    if lead_found is None:
-        raise HTTPException(status_code=404, detail="Lead não encontrado")
-
-    history = await get_history_persistent(lead_found.phone_number, last_n=500)
+    target_phone = lead_found.phone_number if lead_found else resolved_phone
+    history = await get_history_persistent(target_phone, last_n=500)
     if not history:
-        history = await get_history(lead_found.phone_number, last_n=200)
+        history = await get_history(target_phone, last_n=200)
+
+    if lead_found is None and not history:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
 
     normalized_history = []
     for m in history:
@@ -1119,11 +1157,11 @@ async def admin_monitor_history(
 
     return {
         "lead": {
-            "phone_number": lead_found.phone_number,
-            "name": lead_found.name,
-            "stage": lead_found.stage.value,
-            "course_slug": lead_found.course_slug.value,
-            "script_step": lead_found.script_step,
+            "phone_number": target_phone,
+            "name": lead_found.name if lead_found else "Lead sem cadastro",
+            "stage": lead_found.stage.value if lead_found else "new",
+            "course_slug": lead_found.course_slug.value if lead_found else "unknown",
+            "script_step": lead_found.script_step if lead_found else 0,
         },
         "messages": normalized_history,
     }
@@ -1481,17 +1519,18 @@ async def pause_agent_for_lead(
     _authorize_admin(x_admin_key, key)
 
     phone = payload.phone_number
-    lead = await get_lead(phone)
+    resolved_phone = await resolve_lead_phone(phone)
+    lead = await get_lead(resolved_phone)
 
     if not lead:
         raise HTTPException(status_code=404, detail=f"Lead {phone} não encontrado")
 
-    await update_lead_field(phone, agent_paused=True)
-    logger.info(f"⏸ Agent paused for {phone}")
+    await update_lead_field(resolved_phone, agent_paused=True)
+    logger.info(f"⏸ Agent paused for {resolved_phone}")
 
     return {
         "status": "paused",
-        "phone": phone,
+        "phone": resolved_phone,
         "name": lead.name,
         "message": "Agente pausado para este lead",
     }
@@ -1507,17 +1546,18 @@ async def resume_agent_for_lead(
     _authorize_admin(x_admin_key, key)
 
     phone = payload.phone_number
-    lead = await get_lead(phone)
+    resolved_phone = await resolve_lead_phone(phone)
+    lead = await get_lead(resolved_phone)
 
     if not lead:
         raise HTTPException(status_code=404, detail=f"Lead {phone} não encontrado")
 
-    await update_lead_field(phone, agent_paused=False)
-    logger.info(f"▶ Agent resumed for {phone}")
+    await update_lead_field(resolved_phone, agent_paused=False)
+    logger.info(f"▶ Agent resumed for {resolved_phone}")
 
     return {
         "status": "resumed",
-        "phone": phone,
+        "phone": resolved_phone,
         "name": lead.name,
         "message": "Agente retomado para este lead",
     }
@@ -1533,7 +1573,8 @@ async def set_script_step_for_lead(
     _authorize_admin(x_admin_key, key)
 
     phone = payload.phone_number
-    lead = await get_lead(phone)
+    resolved_phone = await resolve_lead_phone(phone)
+    lead = await get_lead(resolved_phone)
     if not lead:
         raise HTTPException(status_code=404, detail=f"Lead {phone} não encontrado")
 
@@ -1541,10 +1582,10 @@ async def set_script_step_for_lead(
     if payload.activate_agent:
         updates["agent_paused"] = False
 
-    updated = await update_lead_field(phone, **updates)
+    updated = await update_lead_field(resolved_phone, **updates)
     logger.info(
         "🎛️ Script step ajustado via painel.",
-        phone=phone,
+        phone=resolved_phone,
         script_step=payload.script_step,
         activate_agent=payload.activate_agent,
     )
@@ -1566,13 +1607,14 @@ async def get_script_status(
     """Obter status do script em execução para um lead."""
     _authorize_admin(x_admin_key, key)
 
-    lead = await get_lead(phone_number)
+    resolved_phone = await resolve_lead_phone(phone_number)
+    lead = await get_lead(resolved_phone)
 
     if not lead:
-        raise HTTPException(status_code=404, detail=f"Lead {phone_number} não encontrado")
+        raise HTTPException(status_code=404, detail=f"Lead {resolved_phone} não encontrado")
 
     return {
-        "phone": phone_number,
+        "phone": resolved_phone,
         "name": lead.name,
         "course_slug": lead.course_slug,
         "current_script": lead.course_slug,

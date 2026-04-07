@@ -501,6 +501,16 @@ async def admin_monitor_page(
     document.getElementById("chatHeader").innerText = `${{lead.name || "Lead sem nome"}}`;
     document.getElementById("chatSubHeader").innerText = `${{lead.phone_number || ""}} • ${{lead.course_slug || ""}} • ${{stageLabel(lead.stage || "")}}`;
 
+    // Mostra controle do agente imediatamente com fallback dos dados do histórico,
+    // mesmo se o endpoint de status oscilar.
+    ensureStepOptions();
+    document.getElementById("agentControl").style.display = "block";
+    document.getElementById("scriptName").textContent = lead.course_slug || "---";
+    document.getElementById("scriptStep").textContent = String(lead.script_step ?? 0);
+    document.getElementById("scriptBlock").textContent = "---";
+    const stepSelectOnOpen = document.getElementById("scriptStepSelect");
+    if (stepSelectOnOpen) stepSelectOnOpen.value = String(lead.script_step ?? 0);
+
     // Se não houve mudança, não re-renderiza (evita travada e pulo de scroll).
     const last = messages.length ? messages[messages.length - 1] : null;
     const fingerprint = `${{lead.phone_number || phone}}:${{messages.length}}:${{last?.timestamp || ""}}:${{String(last?.content || "").slice(0, 24)}}`;
@@ -848,12 +858,9 @@ async def admin_monitor_page(
         if (stepSelect) stepSelect.value = String(data.script_step ?? 0);
         document.getElementById("agentControl").style.display = "block";
         updateAgentStatus(data.is_paused);
-      }} else {{
-        document.getElementById("agentControl").style.display = "none";
       }}
     }} catch (err) {{
       console.error("Error loading script status:", err);
-      document.getElementById("agentControl").style.display = "none";
     }}
   }}
 

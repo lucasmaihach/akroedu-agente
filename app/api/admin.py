@@ -10,7 +10,14 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.memory.session import get_history, get_history_persistent, iter_leads, get_lead, update_lead_field
+from app.memory.session import (
+    get_history,
+    get_history_persistent,
+    iter_leads,
+    get_lead,
+    update_lead_field,
+    resolve_lead_phone,
+)
 from app.models.lead import LeadStage
 from app.services import whatsapp
 
@@ -27,6 +34,12 @@ class OutboundTemplateRequest(BaseModel):
 
 class PauseAgentRequest(BaseModel):
     phone_number: str = Field(..., description="Número do lead (com ou sem DDI)")
+
+
+class SetScriptStepRequest(BaseModel):
+    phone_number: str = Field(..., description="Número do lead (com ou sem DDI)")
+    script_step: int = Field(..., ge=0, le=200, description="Novo passo do script")
+    activate_agent: bool = Field(default=True, description="Se true, retoma agente após ajuste")
 
 
 def _authorize_admin(x_admin_key: str | None, key: str | None = None) -> None:
@@ -178,6 +191,9 @@ async def admin_monitor_page(
     .status-badge.paused {{ background:#fee2e2; color:#b91c1c; }}
     .btn-agent {{ padding:6px 12px; border:none; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; background:var(--brand); color:#fff; transition:background .2s; }}
     .btn-agent:hover {{ background:#2563eb; }}
+    .agent-step-control {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }}
+    .agent-step-control label {{ font-size:12px; color:#334155; }}
+    .agent-step-control select {{ width:120px; padding:6px 8px; border-radius:6px; font-size:12px; }}
     /* ── followups tab ── */
     .followups-toolbar {{ display:flex; gap:12px; padding:12px 24px; background:var(--panel); border-bottom:1px solid var(--line); align-items:center; justify-content:space-between; flex-wrap:wrap; }}
     .tag-filter {{ padding:6px 12px; border:1px solid #e5eaf2; border-radius:20px; background:#fff; cursor:pointer; font-size:12px; font-weight:600; color:var(--muted); transition:all .2s; }}
@@ -238,6 +254,11 @@ async def admin_monitor_page(
                 <button onclick="pauseAgentForLead()" class="btn-agent" id="pauseBtn">⏸ Pausar</button>
                 <button onclick="resumeAgentForLead()" class="btn-agent" id="resumeBtn" style="display:none;">▶ Retomar</button>
               </div>
+              <div class="agent-step-control">
+                <label for="scriptStepSelect"><strong>Etapa do fluxo:</strong></label>
+                <select id="scriptStepSelect"></select>
+                <button onclick="setScriptStepForLead()" class="btn-agent">Salvar etapa + Ativar</button>
+              </div>
             </div>
           </div>
           <div class="chat-body" id="chatBody">
@@ -286,6 +307,8 @@ async def admin_monitor_page(
   let lastChatFingerprint = "";
   let renderedChatCount = 0;
   let renderedLastTs = "";
+  let leadsRequestSeq = 0;
+  let chatRequestSeq = 0;
 
   const SCROLL_STICKY_THRESHOLD_PX = 140;
 
@@ -330,20 +353,40 @@ async def admin_monitor_page(
     }}).replace(",", "");
   }}
 
+  function ensureStepOptions(maxStep=40) {{
+    const select = document.getElementById("scriptStepSelect");
+    if (!select || select.options.length > 0) return;
+    for (let i = 0; i <= maxStep; i++) {{
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = `Passo ${{i}}`;
+      select.appendChild(opt);
+    }}
+  }}
+
   async function loadLeads() {{
+    const reqId = ++leadsRequestSeq;
     const productTag = document.getElementById("productTag")?.value || "";
     const includeClosed = document.getElementById("includeClosed")?.checked ? "1" : "0";
     let url = `/admin/monitor/leads?key=${{encodeURIComponent(adminKey)}}&include_closed=${{includeClosed}}`;
     if (productTag) url += `&product_tag=${{encodeURIComponent(productTag)}}`;
 
-    const res = await fetch(url);
-    if (!res.ok) {{
-      document.getElementById("leadList").innerHTML = `<div class='empty'>Erro ao carregar leads (${{res.status}})</div>`;
-      return;
+    try {{
+      const res = await fetch(url);
+      if (!res.ok) {{
+        document.getElementById("leadList").innerHTML = `<div class='empty'>Erro ao carregar leads (${{res.status}})</div>`;
+        return;
+      }}
+      const data = await res.json();
+      if (reqId !== leadsRequestSeq) return;
+      allLeads = data.leads || [];
+      renderLeads();
+    }} catch (err) {{
+      console.error("Erro em loadLeads:", err);
+      if (!allLeads.length) {{
+        document.getElementById("leadList").innerHTML = "<div class='empty'>Falha de conexão ao carregar leads.</div>";
+      }}
     }}
-    const data = await res.json();
-    allLeads = data.leads || [];
-    renderLeads();
   }}
 
   function renderLeads() {{
@@ -423,6 +466,7 @@ async def admin_monitor_page(
   }}
 
   async function openChat(phone, preserveScroll=false) {{
+    const reqId = ++chatRequestSeq;
     selectedPhone = phone;
     if (!preserveScroll) {{
       renderedChatCount = 0;
@@ -437,13 +481,20 @@ async def admin_monitor_page(
     const prevScrollTop = body.scrollTop;
     const prevScrollHeight = body.scrollHeight;
 
-    const res = await fetch(`/admin/monitor/history/${{encodeURIComponent(phone)}}?key=${{encodeURIComponent(adminKey)}}`);
-    if (!res.ok) {{
-      document.getElementById("chatBody").innerHTML = `<div class='empty'>Erro ao carregar conversa (${{res.status}})</div>`;
+    let data = null;
+    try {{
+      const res = await fetch(`/admin/monitor/history/${{encodeURIComponent(phone)}}?key=${{encodeURIComponent(adminKey)}}`);
+      if (!res.ok) {{
+        document.getElementById("chatBody").innerHTML = `<div class='empty'>Erro ao carregar conversa (${{res.status}})</div>`;
+        return;
+      }}
+      data = await res.json();
+    }} catch (err) {{
+      console.error("Erro ao carregar conversa:", err);
+      document.getElementById("chatBody").innerHTML = "<div class='empty'>Falha de conexão ao carregar conversa.</div>";
       return;
     }}
-
-    const data = await res.json();
+    if (reqId !== chatRequestSeq) return;
     const lead = data.lead || {{}};
     const messages = data.messages || [];
 
@@ -609,13 +660,27 @@ async def admin_monitor_page(
     if (from) url += `&date_from=${{encodeURIComponent(from)}}`;
     if (to)   url += `&date_to=${{encodeURIComponent(to)}}`;
 
-    const res = await fetch(url);
-    if (btn) {{ btn.disabled = false; btn.textContent = "↻ Atualizar"; }}
-    if (!res.ok) {{
-      document.getElementById("reportWrap").innerHTML = `<div class='empty'>Erro ao carregar relatório (${{res.status}})</div>`;
+    let s = null;
+    try {{
+      const res = await fetch(url);
+      if (btn) {{ btn.disabled = false; btn.textContent = "↻ Atualizar"; }}
+      if (!res.ok) {{
+        document.getElementById("reportWrap").innerHTML = `<div class='empty'>Erro ao carregar relatório (${{res.status}})</div>`;
+        return;
+      }}
+      s = await res.json();
+    }} catch (err) {{
+      if (btn) {{ btn.disabled = false; btn.textContent = "↻ Atualizar"; }}
+      console.error("Erro ao carregar relatório:", err);
+      document.getElementById("reportWrap").innerHTML = "<div class='empty'>Falha de conexão ao carregar relatório.</div>";
       return;
     }}
-    const s = await res.json();
+
+    s.by_stage = s.by_stage || {{}};
+    s.by_followup_status = s.by_followup_status || {{}};
+    s.by_script_step = s.by_script_step || [];
+    s.followup_c1 = s.followup_c1 || [];
+    s.followup_c2 = s.followup_c2 || [];
     const now = new Date().toLocaleString("pt-BR");
     const dateRange = (from || to) ? ` · Período: ${{from || "início"}} → ${{to || "hoje"}}` : " · Todos os períodos";
 
@@ -775,14 +840,45 @@ async def admin_monitor_page(
       const res = await fetch(`/admin/lead-script-status?phone_number=${{encodeURIComponent(selectedPhone)}}&key=${{encodeURIComponent(adminKey)}}`);
       if (res.ok) {{
         const data = await res.json();
+        ensureStepOptions();
         document.getElementById("scriptName").textContent = data.current_script || "---";
         document.getElementById("scriptStep").textContent = data.script_step;
         document.getElementById("scriptBlock").textContent = data.last_script_block || "---";
+        const stepSelect = document.getElementById("scriptStepSelect");
+        if (stepSelect) stepSelect.value = String(data.script_step ?? 0);
         document.getElementById("agentControl").style.display = "block";
         updateAgentStatus(data.is_paused);
+      }} else {{
+        document.getElementById("agentControl").style.display = "none";
       }}
     }} catch (err) {{
       console.error("Error loading script status:", err);
+      document.getElementById("agentControl").style.display = "none";
+    }}
+  }}
+
+  async function setScriptStepForLead() {{
+    if (!selectedPhone) return alert("Selecione um lead primeiro");
+    const stepValue = Number(document.getElementById("scriptStepSelect")?.value || 0);
+    try {{
+      const res = await fetch(`/admin/lead-script-step?key=${{encodeURIComponent(adminKey)}}`, {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{
+          phone_number: selectedPhone,
+          script_step: stepValue,
+          activate_agent: true
+        }})
+      }});
+      if (!res.ok) {{
+        alert("Erro ao salvar etapa do fluxo");
+        return;
+      }}
+      await loadScriptStatus();
+      await loadLeads();
+    }} catch (err) {{
+      console.error("Error setting script step:", err);
+      alert("Erro ao salvar etapa do fluxo");
     }}
   }}
 
@@ -1000,19 +1096,15 @@ async def admin_monitor_history(
     _authorize_admin(x_admin_key, key)
 
     clean_phone = "".join(ch for ch in phone_number if ch.isdigit())
-    lead_found = None
-
-    async for lead in iter_leads():
-        if lead.phone_number == clean_phone:
-            lead_found = lead
-            break
+    resolved_phone = await resolve_lead_phone(clean_phone)
+    lead_found = await get_lead(resolved_phone)
 
     if lead_found is None:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
 
-    history = await get_history_persistent(clean_phone, last_n=500)
+    history = await get_history_persistent(lead_found.phone_number, last_n=500)
     if not history:
-        history = await get_history(clean_phone, last_n=200)
+        history = await get_history(lead_found.phone_number, last_n=200)
 
     normalized_history = []
     for m in history:
@@ -1431,6 +1523,40 @@ async def resume_agent_for_lead(
     }
 
 
+@router.post("/lead-script-step")
+async def set_script_step_for_lead(
+    payload: SetScriptStepRequest,
+    x_admin_key: str | None = Header(default=None),
+    key: str | None = Query(default=None),
+):
+    """Ajusta passo do script para um lead e, opcionalmente, ativa o agente."""
+    _authorize_admin(x_admin_key, key)
+
+    phone = payload.phone_number
+    lead = await get_lead(phone)
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"Lead {phone} não encontrado")
+
+    updates = {"script_step": int(payload.script_step)}
+    if payload.activate_agent:
+        updates["agent_paused"] = False
+
+    updated = await update_lead_field(phone, **updates)
+    logger.info(
+        "🎛️ Script step ajustado via painel.",
+        phone=phone,
+        script_step=payload.script_step,
+        activate_agent=payload.activate_agent,
+    )
+
+    return {
+        "status": "ok",
+        "phone": updated.phone_number,
+        "script_step": updated.script_step,
+        "is_paused": updated.agent_paused,
+    }
+
+
 @router.get("/lead-script-status")
 async def get_script_status(
     phone_number: str = Query(..., description="Número do lead"),
@@ -1471,7 +1597,7 @@ async def get_scheduled_followups(
     _authorize_admin(x_admin_key, key)
 
     followups = []
-    for lead in iter_leads():
+    async for lead in iter_leads():
         if not lead:
             continue
 

@@ -1082,6 +1082,52 @@ async def admin_monitor_leads(
     except Exception as e:
         logger.warning("Falha ao listar leads via PostgreSQL — tentando fallback Redis.", error=str(e))
 
+        try:
+            from sqlalchemy import select
+            from app.db.database import AsyncSessionLocal
+            from app.db.orm_models import ConversationORM
+
+            async with AsyncSessionLocal() as session:
+                phones_stmt = select(ConversationORM.phone_number).distinct()
+                conv_phones = (await session.execute(phones_stmt)).scalars().all()
+
+                leads_from_conversation: list[dict] = []
+                for phone in conv_phones:
+                    if not phone:
+                        continue
+                    last_msg_res = await session.execute(
+                        select(ConversationORM.content, ConversationORM.created_at)
+                        .where(ConversationORM.phone_number == phone)
+                        .order_by(ConversationORM.created_at.desc())
+                        .limit(1)
+                    )
+                    last_row = last_msg_res.first()
+                    preview = str((last_row[0] if last_row else "") or "")
+                    last_at = last_row[1] if last_row else None
+
+                    leads_from_conversation.append(
+                        {
+                            "phone_number": phone,
+                            "name": "Lead sem cadastro",
+                            "course_slug": "unknown",
+                            "stage": "new",
+                            "script_step": 0,
+                            "is_escalated": False,
+                            "followup_status": "idle",
+                            "last_inbound_at": _format_dt(last_at),
+                            "last_message_preview": (preview[:120] + "...") if len(preview) > 120 else preview,
+                        }
+                    )
+
+            if leads_from_conversation:
+                leads_from_conversation.sort(
+                    key=lambda item: item.get("last_inbound_at") or "",
+                    reverse=True,
+                )
+                return {"count": len(leads_from_conversation), "leads": leads_from_conversation}
+        except Exception as fallback_exc:
+            logger.warning("Fallback por conversations também falhou.", error=str(fallback_exc))
+
     leads_payload: list[dict] = []
     product_tag_norm = (product_tag or "").strip()
 
@@ -1201,11 +1247,10 @@ async def admin_monitor_stats(
             return None
         try:
             d = datetime.fromisoformat(s)
-            if d.tzinfo is None:
-                d = d.replace(tzinfo=timezone.utc)
             if end_of_day:
-                from datetime import timedelta
                 d = d.replace(hour=23, minute=59, second=59)
+            else:
+                d = d.replace(hour=0, minute=0, second=0)
             return d
         except ValueError:
             return None
@@ -1292,6 +1337,24 @@ async def admin_monitor_stats(
     leads_responded = sum(1 for l in all_leads if l.phone_number in phones_with_response)
     leads_no_response = total - leads_responded
     response_rate = round(leads_responded / total * 100, 1) if total else 0
+
+    if total == 0 and phones_in_range:
+        responded_fallback = sum(1 for phone in phones_in_range if phone in phones_with_response)
+        total_fallback = len(phones_in_range)
+        return {
+            "total_leads": total_fallback,
+            "leads_responded": responded_fallback,
+            "leads_no_response": max(0, total_fallback - responded_fallback),
+            "response_rate": round(responded_fallback / total_fallback * 100, 1) if total_fallback else 0,
+            "converted": 0,
+            "conversion_rate": 0,
+            "escalated": 0,
+            "by_stage": {},
+            "by_followup_status": {},
+            "by_script_step": [],
+            "followup_c1": [],
+            "followup_c2": [],
+        }
 
     # ── Follow-up por mensagem: enviado vs respondeu (por cenário) ───────────
     # followup_step = próximo step a enviar (step N já foi enviado quando followup_step > N)
@@ -1381,16 +1444,16 @@ async def admin_export_conversations(
     def _in_range(lead) -> bool:
         if dt_from is None and dt_to is None:
             return True
-        ref = lead.last_inbound_at
-        if ref is None:
-            return False
-        if ref.tzinfo is None:
-            ref = ref.replace(tzinfo=timezone.utc)
-        if dt_from and ref < dt_from:
-            return False
-        if dt_to and ref > dt_to:
-            return False
-        return True
+            ref = lead.last_inbound_at
+            if ref is None:
+                return False
+            if ref.tzinfo is not None:
+                ref = ref.astimezone(timezone.utc).replace(tzinfo=None)
+            if dt_from and ref < dt_from:
+                return False
+            if dt_to and ref > dt_to:
+                return False
+            return True
 
     normalized_course = (course_slug or "").strip().lower()
     normalized_prefix = (course_prefix or "").strip().lower()

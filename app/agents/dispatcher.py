@@ -4,11 +4,16 @@ import random
 import structlog
 
 from app.models.lead import Lead, CourseSlug, LeadStage
+from app.config import settings
 from app.agents.router_agent import identify_course
 from app.agents.courses.curso_1_agent import Curso1Agent
 from app.agents.courses.curso_2_agent import Curso2Agent
 from app.agents.courses.pos_fisio_neuro_agent import PosFisioNeuroAgent
-from app.memory.session import update_lead_field
+from app.memory.session import (
+    update_lead_field,
+    get_context_reply_count,
+    increment_context_reply_count,
+)
 from app.services import whatsapp
 from app.services import escalation
 from app.services import output_guard
@@ -581,6 +586,40 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
             return True, None
 
         if _looks_like_question(user_message):
+            if not settings.allow_context_reply:
+                fallback = _pick_out_of_faq_response(lead.phone_number, lead.gender)
+                await whatsapp.send_text(to=lead.phone_number, text=fallback)
+                await escalation.notify_human_only(
+                    lead=lead,
+                    reason="Pergunta fora do FAQ durante script ativo (context_reply desabilitado)",
+                    user_message=user_message,
+                )
+                logger.info(
+                    "Pergunta fora do FAQ — resposta contextual desabilitada por config.",
+                    phone=lead.phone_number,
+                    step=lead.script_step,
+                )
+                return True, None
+
+            max_context = max(0, int(settings.max_context_replies_per_step))
+            used_context_replies = await get_context_reply_count(lead.phone_number, lead.script_step)
+            if used_context_replies >= max_context:
+                fallback = _pick_out_of_faq_response(lead.phone_number, lead.gender)
+                await whatsapp.send_text(to=lead.phone_number, text=fallback)
+                await escalation.notify_human_only(
+                    lead=lead,
+                    reason="Pergunta fora do FAQ durante script ativo (limite de resposta contextual por step atingido)",
+                    user_message=user_message,
+                )
+                logger.info(
+                    "Limite de respostas contextuais por step atingido.",
+                    phone=lead.phone_number,
+                    step=lead.script_step,
+                    used=used_context_replies,
+                    max_allowed=max_context,
+                )
+                return True, None
+
             # Tenta responder com segurança usando histórico + knowledge base.
             knowledge = load_knowledge(getattr(agent, "course_slug", course.value))
             current_question = _get_current_closing_question(lead, current_script) or _get_pending_engagement_question(lead, current_script)
@@ -598,17 +637,21 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
 
             # Barreira física contra vazamento de preço.
             reply = output_guard.sanitize(reply) or ""
-            if can_answer and reply:
+            can_send_reply = bool(reply) and (can_answer or not settings.strict_grounding)
+            if can_send_reply:
                 reply = adapt_gender_text(reply, lead.gender)
                 delay = whatsapp.estimate_typing_delay(reply)
                 await whatsapp.send_typing_and_wait(lead.last_received_msg_id or "", delay)
                 await whatsapp.send_text(to=lead.phone_number, text=reply)
+                await increment_context_reply_count(lead.phone_number, lead.script_step)
                 logger.info(
                     "Resposta contextual enviada durante script ativo.",
                     phone=lead.phone_number,
                     step=lead.script_step,
                     notify_human=notify_human,
                     should_advance=should_advance,
+                    strict_grounding=settings.strict_grounding,
+                    can_answer=can_answer,
                     decision_reason=decision.get("reason", ""),
                 )
             else:

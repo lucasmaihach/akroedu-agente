@@ -58,6 +58,11 @@ def _followup_lock_key(phone: str) -> str:
     return f"followup_lock:{phone}"
 
 
+def _context_reply_count_key(phone: str, step: int) -> str:
+    """Contador de respostas contextuais por lead/step do script."""
+    return f"context_reply_count:{phone}:step:{step}"
+
+
 # ── Gerenciamento do Lead em cache ────────────────────────────────────────────
 
 def _to_db_datetime(dt: datetime | None) -> datetime | None:
@@ -317,6 +322,30 @@ async def clear_history(phone: str) -> None:
     phone = normalize_phone(phone)
     r = get_redis()
     await r.delete(_history_key(phone))
+
+
+async def get_context_reply_count(phone: str, step: int) -> int:
+    phone = normalize_phone(phone)
+    r = get_redis()
+    raw = await r.get(_context_reply_count_key(phone, step))
+    try:
+        return int(raw or 0)
+    except Exception:
+        return 0
+
+
+async def increment_context_reply_count(phone: str, step: int) -> int:
+    """
+    Incrementa contador de respostas contextuais para o step atual.
+    TTL acompanha TTL da sessão.
+    """
+    phone = normalize_phone(phone)
+    r = get_redis()
+    key = _context_reply_count_key(phone, step)
+    value = await r.incr(key)
+    ttl = settings.session_ttl_hours * 3600
+    await r.expire(key, ttl)
+    return int(value)
 
 
 async def resolve_lead_phone(phone: str) -> str:

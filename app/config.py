@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     escalation_whatsapp_number: str
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    allow_context_reply: bool = True
+    max_context_replies_per_step: int = 1
+    strict_grounding: bool = True
 
     # ── Cursos ──────────────────────────────────────────────
     course_slugs: str = "curso_1,curso_2,pos_fisio_neuro"

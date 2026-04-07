@@ -11,7 +11,7 @@ from app.services.transcription import transcribe_audio
 from app.followup.service import stop_followup_on_inbound
 from app.services.error_alert import notify_conversation_error
 from app.utils.business_hours import is_within_business_hours, now_utc
-from app.utils.phone import normalize_phone
+from app.utils.phone import normalize_phone, is_canonical_br_phone
 from app.jobs.store import schedule_debounce_inbound
 
 logger = structlog.get_logger()
@@ -145,6 +145,14 @@ async def _handle_incoming_message(msg, value) -> None:
         phone_number = await _resolve_phone(raw_phone)
         contact_name = value.contacts[0].profile.get("name") if value.contacts else None
         message_type = msg.type
+
+        if raw_phone and not is_canonical_br_phone(raw_phone):
+            logger.warning(
+                "Telefone inbound fora do padrão canônico BR.",
+                raw=msg.from_,
+                normalized=raw_phone,
+                resolved=phone_number,
+            )
 
         # Deduplicação: Meta pode reenviar o mesmo webhook mais de uma vez
         if await is_message_already_processed(msg.id):

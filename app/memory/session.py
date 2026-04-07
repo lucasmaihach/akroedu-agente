@@ -13,7 +13,7 @@ from app.models.lead import Lead, LeadStage, CourseSlug
 from app.db.database import AsyncSessionLocal
 from app.db.orm_models import LeadORM
 from app.utils.gender_detection import detect_gender_from_name
-from app.utils.phone import normalize_phone, phone_variants
+from app.utils.phone import normalize_phone, phone_variants, is_canonical_br_phone
 
 logger = structlog.get_logger()
 
@@ -368,7 +368,55 @@ async def resolve_lead_phone(phone: str) -> str:
         if found is not None:
             return found.phone_number
 
+    resolved_by_suffix = await _resolve_lead_phone_by_suffix(canonical)
+    if resolved_by_suffix:
+        return resolved_by_suffix
+
     return canonical
+
+
+async def _resolve_lead_phone_by_suffix(phone: str) -> str | None:
+    """
+    Fallback para números malformados:
+    tenta vincular por sufixo quando existir UM único lead candidato.
+    """
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return None
+    if is_canonical_br_phone(normalized):
+        return None
+
+    try:
+        async with AsyncSessionLocal() as session:
+            for tail_size in (11, 10, 9, 8):
+                if len(normalized) < tail_size:
+                    continue
+                tail = normalized[-tail_size:]
+                stmt = (
+                    select(LeadORM.phone_number)
+                    .where(LeadORM.phone_number.like(f"%{tail}"))
+                    .limit(3)
+                )
+                rows = (await session.execute(stmt)).scalars().all()
+                unique = list(dict.fromkeys(rows))
+                if len(unique) == 1:
+                    logger.warning(
+                        "Telefone inbound malformado resolvido por fallback de sufixo.",
+                        raw=phone,
+                        normalized=normalized,
+                        resolved=unique[0],
+                        tail_size=tail_size,
+                    )
+                    return unique[0]
+    except Exception as e:
+        logger.warning(
+            "Falha no fallback de resolução por sufixo.",
+            phone=phone,
+            normalized=normalized,
+            error=str(e),
+        )
+
+    return None
 
 
 # ── Script lock ───────────────────────────────────────────────────────────────

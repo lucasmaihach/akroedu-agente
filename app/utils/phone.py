@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+import re
+
+
+_BR_CANONICAL_RE = re.compile(r"^55[1-9][0-9]9?[0-9]{8}$")
+
+
+def is_canonical_br_phone(phone: str | None) -> bool:
+    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
+    return bool(_BR_CANONICAL_RE.fullmatch(digits))
+
 
 def normalize_phone(phone: str | None) -> str:
     """
@@ -14,6 +24,9 @@ def normalize_phone(phone: str | None) -> str:
     digits = "".join(ch for ch in (phone or "") if ch.isdigit())
     if not digits:
         return ""
+
+    if digits.startswith("00"):
+        digits = digits[2:]
 
     if digits.startswith("55"):
         if len(digits) == 13:
@@ -52,4 +65,3 @@ def phone_variants(phone: str | None) -> list[str]:
                 variants.add(f"55{ddd}9{subscriber}")
 
     return list(variants)
-

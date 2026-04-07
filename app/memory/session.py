@@ -13,6 +13,7 @@ from app.models.lead import Lead, LeadStage, CourseSlug
 from app.db.database import AsyncSessionLocal
 from app.db.orm_models import LeadORM
 from app.utils.gender_detection import detect_gender_from_name
+from app.utils.phone import normalize_phone, phone_variants
 
 logger = structlog.get_logger()
 
@@ -174,6 +175,7 @@ async def _save_lead_postgres(lead: Lead) -> None:
 
 async def get_lead(phone: str) -> Optional[Lead]:
     """Recupera o lead do Redis e, se necessário, do PostgreSQL."""
+    phone = normalize_phone(phone)
     r = get_redis()
     data = await r.get(_lead_key(phone))
     if data:
@@ -187,6 +189,7 @@ async def get_lead(phone: str) -> Optional[Lead]:
 
 async def save_lead(lead: Lead) -> None:
     """Salva ou atualiza o lead no Redis e no PostgreSQL."""
+    lead = lead.model_copy(update={"phone_number": normalize_phone(lead.phone_number)})
     r = get_redis()
     ttl = settings.session_ttl_hours * 3600
     await r.set(
@@ -199,6 +202,7 @@ async def save_lead(lead: Lead) -> None:
 
 async def get_or_create_lead(phone: str, name: Optional[str] = None) -> Lead:
     """Retorna o lead existente ou cria um novo."""
+    phone = normalize_phone(phone)
     lead = await get_lead(phone)
     if lead is None:
         gender = detect_gender_from_name(name) if name else "male"
@@ -222,6 +226,7 @@ async def get_or_create_lead(phone: str, name: Optional[str] = None) -> Lead:
 
 async def update_lead_field(phone: str, **kwargs) -> Lead:
     """Atualiza campos específicos do lead no Redis."""
+    phone = normalize_phone(phone)
     lead = await get_lead(phone)
     if lead is None:
         raise ValueError(f"Lead {phone} não encontrado no Redis.")
@@ -234,6 +239,7 @@ async def update_lead_field(phone: str, **kwargs) -> Lead:
 
 async def append_message(phone: str, role: str, content: str) -> None:
     """Adiciona mensagem no Redis (cache) e também persiste no PostgreSQL."""
+    phone = normalize_phone(phone)
     # Cache temporário no Redis (usado pelo agente em tempo real)
     r = get_redis()
     message = json.dumps({"role": role, "content": content})
@@ -308,8 +314,32 @@ async def get_history_persistent(phone: str, last_n: int = 200) -> list[dict]:
 
 async def clear_history(phone: str) -> None:
     """Limpa o histórico da conversa (usado em testes ou reset)."""
+    phone = normalize_phone(phone)
     r = get_redis()
     await r.delete(_history_key(phone))
+
+
+async def resolve_lead_phone(phone: str) -> str:
+    """
+    Resolve a identidade do lead por variações equivalentes do telefone.
+    Evita split de conversa entre versões com/sem 9º dígito.
+    """
+    canonical = normalize_phone(phone)
+    if not canonical:
+        return canonical
+
+    direct = await get_lead(canonical)
+    if direct is not None:
+        return direct.phone_number
+
+    for variant in phone_variants(canonical):
+        if variant == canonical:
+            continue
+        found = await get_lead(variant)
+        if found is not None:
+            return found.phone_number
+
+    return canonical
 
 
 # ── Script lock ───────────────────────────────────────────────────────────────

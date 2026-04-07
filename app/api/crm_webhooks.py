@@ -13,6 +13,7 @@ from app.memory.session import get_or_create_lead, update_lead_field
 from app.models.lead import CourseSlug, LeadStage
 from app.services import whatsapp
 from app.utils.business_hours import now_utc, fit_business_hours, is_within_business_hours
+from app.utils.phone import normalize_phone
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -118,18 +119,6 @@ async def _read_request_payload(request: Request) -> Any:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
 
-def _normalize_phone(phone: str) -> str:
-    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
-
-    # Canonicaliza Brasil para evitar duplicidade 11XXXXXXXXX vs 55XXXXXXXXXXX
-    if digits.startswith("55") and len(digits) in (12, 13):
-        return digits
-    if len(digits) in (10, 11):
-        return f"55{digits}"
-
-    return digits
-
-
 def _extract_nested(payload: dict[str, Any], *keys: str) -> Any:
     for key in keys:
         if key in payload and payload[key] not in (None, ""):
@@ -144,7 +133,7 @@ def _extract_phone(payload: dict[str, Any]) -> str:
         or _extract_nested(lead_data, "phone", "telefone", "whatsapp", "mobile", "celular")
         or ""
     )
-    return _normalize_phone(str(raw))
+    return normalize_phone(str(raw))
 
 
 def _extract_name(payload: dict[str, Any]) -> str | None:
@@ -353,6 +342,8 @@ async def receive_sprinthub_webhook(
     )
 
     phone = _extract_phone(payload)
+    from app.memory.session import resolve_lead_phone as _resolve_phone
+    phone = await _resolve_phone(phone)
     if not phone:
         logger.warning(
             "⚠️ SprintHub ignorado: telefone ausente.",

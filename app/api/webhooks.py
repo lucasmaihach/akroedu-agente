@@ -11,6 +11,7 @@ from app.services.transcription import transcribe_audio
 from app.followup.service import stop_followup_on_inbound
 from app.services.error_alert import notify_conversation_error
 from app.utils.business_hours import is_within_business_hours, now_utc
+from app.utils.phone import normalize_phone
 from app.jobs.store import schedule_debounce_inbound
 
 logger = structlog.get_logger()
@@ -18,20 +19,6 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 INBOUND_ANALYSIS_DELAY_SECONDS = 30
-
-
-
-def _normalize_phone(phone: str | None) -> str:
-    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
-
-    # Canonicaliza Brasil para evitar divergência entre CRM e WhatsApp inbound
-    if digits.startswith("55") and len(digits) in (12, 13):
-        return digits
-    if len(digits) in (10, 11):
-        return f"55{digits}"
-
-    return digits
-
 
 def _log_status_updates(value) -> None:
     """Registra status de entrega das mensagens enviadas pela Meta."""
@@ -65,8 +52,8 @@ def _log_status_updates(value) -> None:
 
             # Evita loop de alertas quando o próprio número de escalonamento
             # está inválido/bloqueado e gera delivery_failed em cascata.
-            recipient_norm = _normalize_phone(recipient_id)
-            escalation_norm = _normalize_phone(settings.escalation_whatsapp_number)
+            recipient_norm = normalize_phone(recipient_id)
+            escalation_norm = normalize_phone(settings.escalation_whatsapp_number)
             if recipient_norm and escalation_norm and recipient_norm == escalation_norm:
                 logger.warning(
                     "⚠️ delivery_failed no número de escalonamento; alerta suprimido para evitar loop.",
@@ -153,7 +140,9 @@ async def _handle_incoming_message(msg, value) -> None:
     Processa uma mensagem de entrada individual.
     """
     try:
-        phone_number = _normalize_phone(msg.from_)
+        raw_phone = normalize_phone(msg.from_)
+        from app.memory.session import resolve_lead_phone as _resolve_phone
+        phone_number = await _resolve_phone(raw_phone)
         contact_name = value.contacts[0].profile.get("name") if value.contacts else None
         message_type = msg.type
 

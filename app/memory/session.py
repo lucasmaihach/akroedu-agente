@@ -63,6 +63,11 @@ def _context_reply_count_key(phone: str, step: int) -> str:
     return f"context_reply_count:{phone}:step:{step}"
 
 
+def _ops_alert_cooldown_key(phone: str, alert_key: str) -> str:
+    """Cooldown curto para não repetir o mesmo alerta interno em loop."""
+    return f"ops_alert_cd:{phone}:{alert_key}"
+
+
 # ── Gerenciamento do Lead em cache ────────────────────────────────────────────
 
 def _to_db_datetime(dt: datetime | None) -> datetime | None:
@@ -92,6 +97,11 @@ def _lead_from_orm(lead_orm: LeadORM) -> Lead:
         course_slug=course_slug,
         stage=stage,
         sprinthub_id=lead_orm.sprinthub_id,
+        twenty_person_id=lead_orm.twenty_person_id,
+        twenty_opportunity_id=lead_orm.twenty_opportunity_id,
+        chatwoot_contact_id=lead_orm.chatwoot_contact_id,
+        chatwoot_conversation_id=lead_orm.chatwoot_conversation_id,
+        chatwoot_chat_url=lead_orm.chatwoot_chat_url,
         script_step=lead_orm.script_step,
         is_escalated=lead_orm.is_escalated,
         price_ask_count=lead_orm.price_ask_count,
@@ -113,6 +123,8 @@ def _lead_from_orm(lead_orm: LeadORM) -> Lead:
         pending_welcome_template=lead_orm.pending_welcome_template,
         welcome_template_name=lead_orm.welcome_template_name,
         welcome_next_at=lead_orm.welcome_next_at,
+        agent_paused=lead_orm.agent_paused,
+        last_script_block=lead_orm.last_script_block,
     )
 
 
@@ -148,6 +160,11 @@ async def _save_lead_postgres(lead: Lead) -> None:
             lead_orm.course_slug = lead.course_slug.value
             lead_orm.stage = lead.stage.value
             lead_orm.sprinthub_id = lead.sprinthub_id
+            lead_orm.twenty_person_id = lead.twenty_person_id
+            lead_orm.twenty_opportunity_id = lead.twenty_opportunity_id
+            lead_orm.chatwoot_contact_id = lead.chatwoot_contact_id
+            lead_orm.chatwoot_conversation_id = lead.chatwoot_conversation_id
+            lead_orm.chatwoot_chat_url = lead.chatwoot_chat_url
             lead_orm.script_step = lead.script_step
             lead_orm.is_escalated = lead.is_escalated
             lead_orm.price_ask_count = lead.price_ask_count
@@ -172,10 +189,14 @@ async def _save_lead_postgres(lead: Lead) -> None:
             lead_orm.pending_welcome_template = lead.pending_welcome_template
             lead_orm.welcome_template_name = lead.welcome_template_name
             lead_orm.welcome_next_at = _to_db_datetime(lead.welcome_next_at)
+            lead_orm.agent_paused = lead.agent_paused
+            lead_orm.last_script_block = lead.last_script_block
 
             await session.commit()
     except Exception as e:
         logger.error("❌ Falha ao persistir lead no PostgreSQL.", phone=lead.phone_number, error=str(e))
+        # Fail-fast: sem persistência durável, o estado do lead pode quebrar follow-up/debounce.
+        raise
 
 
 async def get_lead(phone: str) -> Optional[Lead]:
@@ -346,6 +367,17 @@ async def increment_context_reply_count(phone: str, step: int) -> int:
     ttl = settings.session_ttl_hours * 3600
     await r.expire(key, ttl)
     return int(value)
+
+
+async def acquire_ops_alert_cooldown(phone: str, alert_key: str, ttl_seconds: int = 30 * 60) -> bool:
+    """
+    Evita spam de alertas internos repetidos para o mesmo lead/contexto.
+    Retorna True quando o alerta deve ser enviado.
+    """
+    phone = normalize_phone(phone)
+    r = get_redis()
+    normalized_alert_key = (alert_key or "default").strip().lower().replace(" ", "_")
+    return bool(await r.set(_ops_alert_cooldown_key(phone, normalized_alert_key), "1", nx=True, ex=ttl_seconds))
 
 
 async def resolve_lead_phone(phone: str) -> str:

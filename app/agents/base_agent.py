@@ -7,12 +7,12 @@ from app.config import settings
 from app.models.lead import Lead, LeadStage
 from app.memory.session import (
     get_history,
-    get_history_persistent,
     update_lead_field,
 )
 from app.services import whatsapp, escalation
 from app.services import crm
 from app.services.error_alert import notify_conversation_error
+from app.services.telemetry import increment_metric
 
 logger = structlog.get_logger()
 
@@ -126,6 +126,25 @@ class BaseAgent:
 
     course_slug: str = "unknown"
     system_prompt: str = ""
+
+    @staticmethod
+    def _compact_messages(history: list[dict], fallback_user_message: str, max_n: int) -> list[dict]:
+        """
+        Compacta histórico para reduzir custo:
+        - mantém somente role/content válidos (remove timestamp e metadados),
+        - limita quantidade de mensagens enviadas ao modelo.
+        """
+        compact: list[dict] = []
+        for item in history[-max_n:]:
+            role = item.get("role")
+            content = item.get("content")
+            if role in {"user", "assistant"} and isinstance(content, str) and content.strip():
+                compact.append({"role": role, "content": content.strip()})
+
+        if compact:
+            return compact
+
+        return [{"role": "user", "content": fallback_user_message}]
 
     async def _simulate_typing(self, lead: Lead) -> None:
         """Mostra breve typing antes da resposta do agente."""
@@ -258,11 +277,9 @@ class BaseAgent:
             f"mudou de assunto ou não endereçou o que foi perguntado."
         )
         try:
-            # Usa histórico persistente (PostgreSQL) quando disponível para melhor contexto.
-            history = await get_history_persistent(lead.phone_number, last_n=80)
-            if not history:
-                history = await get_history(lead.phone_number, last_n=30)
-            messages = history if history else [{"role": "user", "content": user_message}]
+            # Classificação precisa de pouco contexto: reduz custo por inbound.
+            history = await get_history(lead.phone_number, last_n=10)
+            messages = self._compact_messages(history, user_message, max_n=10)
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=150,
@@ -318,10 +335,8 @@ class BaseAgent:
         user_prefix = f"MENSAGEM ATUAL DO LEAD:\n{user_message}\n"
 
         try:
-            history = await get_history_persistent(lead.phone_number, last_n=80)
-            if not history:
-                history = await get_history(lead.phone_number, last_n=30)
-            messages = history if history else [{"role": "user", "content": user_message}]
+            history = await get_history(lead.phone_number, last_n=12)
+            messages = self._compact_messages(history, user_message, max_n=12)
 
             # Injeta KB e o "user_message" explicitamente no system, para reduzir
             # risco de o modelo responder sem ancoragem.
@@ -363,10 +378,8 @@ class BaseAgent:
         agent_name = getattr(self, "agent_name", "Taynara")
         system = _ACOLHIMENTO_SYSTEM.format(agent_name=agent_name, intent=intent)
         try:
-            history = await get_history_persistent(lead.phone_number, last_n=30)
-            if not history:
-                history = await get_history(lead.phone_number, last_n=30)
-            messages = history if history else [{"role": "user", "content": user_message}]
+            # Acolhimento deve reagir à mensagem atual sem reprocessar histórico inteiro.
+            messages = [{"role": "user", "content": user_message}]
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=80,
@@ -405,22 +418,24 @@ class BaseAgent:
         lead = await self._detect_and_update_stage(lead, user_message)
 
         # 3. Monta o histórico para enviar ao Claude
-        history = await get_history(lead.phone_number, last_n=20)
+        history = await get_history(lead.phone_number, last_n=12)
+        messages = self._compact_messages(history, user_message, max_n=12)
 
         # 4. Chama o Claude
         system = self._build_system_prompt(lead, knowledge, script_active=script_active)
         try:
             response = client.messages.create(
                 model=settings.anthropic_model,
-                max_tokens=512,
+                max_tokens=320,
                 system=system,
-                messages=history,
+                messages=messages,
             )
             if not response.content or not hasattr(response.content[0], 'text'):
                 raise ValueError("Claude retornou formato inesperado")
             reply_text = response.content[0].text.strip()
         except Exception as e:
             logger.error("❌ Erro ao chamar Claude.", error=str(e))
+            await increment_metric("conversation_error_total", tags={"category": "llm_error", "provider": "anthropic"})
             await notify_conversation_error(
                 source="anthropic.reply",
                 error=e,
@@ -438,7 +453,9 @@ class BaseAgent:
         # 5. Simula digitação e envia — divide em bolhas separadas por linha
         try:
             await self._simulate_typing(lead)
-            bubbles = [line for line in reply_text.split("\n") if line.strip()]
+            bubbles = whatsapp.split_text_bubbles(reply_text)
+            if not bubbles:
+                bubbles = [reply_text.strip()]
             for i, bubble in enumerate(bubbles):
                 await whatsapp.send_text(to=lead.phone_number, text=bubble)
                 if i < len(bubbles) - 1:

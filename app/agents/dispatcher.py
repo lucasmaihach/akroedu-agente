@@ -22,6 +22,7 @@ from app.utils.business_hours import is_within_business_hours, now_utc
 from app.jobs.store import schedule_faq_reply_resume
 from app.utils.gender_detection import adapt_gender_text, detect_gender_from_name
 from app.knowledge.base import load_knowledge
+from app.services.telemetry import increment_metric
 
 logger = structlog.get_logger()
 
@@ -441,9 +442,14 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
 
     # 3. Se não identificou o produto, ignora silenciosamente — sem enviar nenhuma mensagem.
     if course == CourseSlug.UNKNOWN:
+        await increment_metric("lead_discard_total", tags={"reason": "unknown_course", "channel": "whatsapp"})
         logger.info(
-            "Lead sem produto mapeado — mensagem ignorada silenciosamente.",
+            "Lead sem produto mapeado — mensagem ignorada silenciosamente (regra intencional).",
             phone=lead.phone_number,
+            course="unknown",
+            discard_reason="unknown_course",
+            script_step=lead.script_step,
+            stage=lead.stage.value,
         )
         return False, None
 
@@ -593,7 +599,9 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                     lead=lead,
                     reason="Pergunta fora do FAQ durante script ativo (context_reply desabilitado)",
                     user_message=user_message,
+                    dedup_key=f"outside_faq:step:{lead.script_step}:context_disabled",
                 )
+                await increment_metric("conversation_event_total", tags={"category": "outside_faq_handoff"})
                 logger.info(
                     "Pergunta fora do FAQ — resposta contextual desabilitada por config.",
                     phone=lead.phone_number,
@@ -610,7 +618,9 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                     lead=lead,
                     reason="Pergunta fora do FAQ durante script ativo (limite de resposta contextual por step atingido)",
                     user_message=user_message,
+                    dedup_key=f"outside_faq:step:{lead.script_step}:context_limit",
                 )
+                await increment_metric("conversation_event_total", tags={"category": "outside_faq_handoff"})
                 logger.info(
                     "Limite de respostas contextuais por step atingido.",
                     phone=lead.phone_number,
@@ -632,7 +642,6 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
 
             reply = (decision.get("reply") or "").strip()
             can_answer = bool(decision.get("can_answer"))
-            should_advance = bool(decision.get("should_advance", True))
             notify_human = bool(decision.get("notify_human", False))
 
             # Barreira física contra vazamento de preço.
@@ -649,7 +658,7 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                     phone=lead.phone_number,
                     step=lead.script_step,
                     notify_human=notify_human,
-                    should_advance=should_advance,
+                    should_advance=True,
                     strict_grounding=settings.strict_grounding,
                     can_answer=can_answer,
                     decision_reason=decision.get("reason", ""),
@@ -666,14 +675,18 @@ async def dispatch(lead: Lead, user_message: str) -> tuple[bool, str | None]:
                     decision_reason=decision.get("reason", ""),
                 )
 
+            # Regra solicitada: pergunta fora do FAQ sempre avisa humano (Telegram).
+            notify_human = True
             if notify_human:
                 await escalation.notify_human_only(
                     lead=lead,
                     reason="Pergunta fora do FAQ durante script ativo (decisão contextual)",
                     user_message=user_message,
+                    dedup_key=f"outside_faq:step:{lead.script_step}:context_decision",
                 )
+                await increment_metric("conversation_event_total", tags={"category": "outside_faq_handoff"})
 
-            return should_advance, None
+            return True, None
 
         # ── CLASSIFICAÇÃO (camada 4b) ────────────────────────────────────────────
         # Haiku classifica a intenção via tool_use (JSON garantido) e escolhe o

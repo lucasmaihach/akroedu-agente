@@ -19,6 +19,7 @@ from app.jobs.store import (
 from app.memory.session import get_lead, get_or_create_lead
 from app.script.engine import run_script_step
 from app.services import escalation, whatsapp
+from app.services.telemetry import increment_metric
 from app.utils.business_hours import fit_business_hours, is_within_business_hours, now_utc
 
 logger = structlog.get_logger()
@@ -71,11 +72,6 @@ async def process_due_pending_jobs() -> None:
 
 
 async def _execute_debounce_inbound(job_id: int, phone: str, payload: dict) -> None:
-    now = now_utc()
-    if not is_within_business_hours(now):
-        await reschedule_job(job_id, run_at=fit_business_hours(now), error=None)
-        return
-
     job_last_inbound_at = _parse_iso_datetime(payload.get("last_inbound_at"))
     current_lead = await get_lead(phone)
     lead_last_inbound_at = _as_naive_utc(current_lead.last_inbound_at) if current_lead else None
@@ -127,7 +123,11 @@ async def _execute_debounce_inbound(job_id: int, phone: str, payload: dict) -> N
                 current_script_step=refreshed_lead.script_step,
             )
         else:
-            await run_script_step(phone, acolhimento_override=acolhimento_text)
+            await run_script_step(
+                phone,
+                acolhimento_override=acolhimento_text,
+                respect_business_hours=False,
+            )
 
     # Bug 4: se o script já está completo e a régua está parada (lead respondeu a um
     # template D+), retoma a sequência de follow-up do passo atual sem reiniciar do zero.
@@ -152,6 +152,7 @@ async def _execute_debounce_inbound(job_id: int, phone: str, payload: dict) -> N
 async def _execute_faq_reply_resume(job_id: int, phone: str, payload: dict) -> None:
     now = now_utc()
     if not is_within_business_hours(now):
+        await increment_metric("conversation_event_total", tags={"category": "outside_hours_blocked", "component": "faq_resume"})
         await reschedule_job(job_id, run_at=fit_business_hours(now), error=None)
         return
 
@@ -241,7 +242,7 @@ async def _execute_faq_reply_resume(job_id: int, phone: str, payload: dict) -> N
         )
     else:
         # Sem pergunta de fechamento no bloco → avança o script normalmente
-        await run_script_step(phone, retry_on_lock=False)
+        await run_script_step(phone, retry_on_lock=False, respect_business_hours=False)
         logger.info(
             "FAQ respondido por job persistente e script retomado automaticamente.",
             phone=phone,

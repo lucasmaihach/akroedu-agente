@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -8,6 +9,8 @@ import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import settings
+from app.services.chatwoot import mirror_outbound_message
+from app.services.telemetry import increment_metric
 
 logger = structlog.get_logger()
 
@@ -33,6 +36,120 @@ def _base_payload(to: str) -> dict:
 def _normalize_phone(phone: str) -> str:
     """Normaliza telefone para formato esperado pela Meta (apenas dígitos)."""
     return "".join(ch for ch in phone if ch.isdigit())
+
+
+MAX_WHATSAPP_BUBBLE_CHARS = 420
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def split_text_bubbles(text: str, max_chars: int = MAX_WHATSAPP_BUBBLE_CHARS) -> list[str]:
+    """
+    Quebra texto longo em bolhas curtas para WhatsApp:
+    - preserva parágrafos quando possível
+    - prioriza quebra por sentença
+    - fallback por palavras quando necessário
+    """
+    clean_text = (text or "").strip()
+    if not clean_text:
+        return []
+
+    paragraphs = [p.strip() for p in clean_text.split("\n") if p.strip()]
+    chunks: list[str] = []
+
+    for paragraph in paragraphs:
+        if len(paragraph) <= max_chars:
+            chunks.append(paragraph)
+            continue
+
+        sentence_buffer = ""
+        sentences = _SENTENCE_SPLIT_RE.split(paragraph)
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+
+            candidate = f"{sentence_buffer} {sentence}".strip() if sentence_buffer else sentence
+            if len(candidate) <= max_chars:
+                sentence_buffer = candidate
+                continue
+
+            if sentence_buffer:
+                chunks.append(sentence_buffer)
+                sentence_buffer = ""
+
+            if len(sentence) <= max_chars:
+                sentence_buffer = sentence
+                continue
+
+            words = sentence.split()
+            word_buffer = ""
+            for word in words:
+                merged = f"{word_buffer} {word}".strip() if word_buffer else word
+                if len(merged) <= max_chars:
+                    word_buffer = merged
+                    continue
+                if word_buffer:
+                    chunks.append(word_buffer)
+                word_buffer = word
+            if word_buffer:
+                sentence_buffer = word_buffer
+
+        if sentence_buffer:
+            chunks.append(sentence_buffer)
+
+    return chunks
+
+
+def _is_missing_parameter_name_error(response: httpx.Response) -> bool:
+    """
+    Detecta erro permanente da Meta para templates com parâmetros incompatíveis.
+
+    Exemplo observado em produção:
+    "(#100) Invalid parameter" + details contendo "Parameter name is missing or empty".
+    """
+    if response.status_code != 400:
+        return False
+
+    body = (response.text or "").lower()
+    if "parameter name is missing or empty" in body:
+        return True
+
+    try:
+        payload = response.json()
+    except Exception:
+        return False
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    details = str((error or {}).get("error_data", {}).get("details", "")).lower()
+    return "parameter name is missing or empty" in details
+
+
+def _extract_missing_template_param_name(response: httpx.Response) -> str | None:
+    """
+    Extrai o nome do placeholder quando a Meta retorna erro:
+    "Parameter name is missing for the parameter '{{customer_name}}'".
+    """
+    try:
+        payload = response.json()
+    except Exception:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    details = str((payload.get("error") or {}).get("error_data", {}).get("details", ""))
+    marker_start = "{{"
+    marker_end = "}}"
+    if marker_start not in details or marker_end not in details:
+        return None
+
+    start = details.find(marker_start) + len(marker_start)
+    end = details.find(marker_end, start)
+    if end == -1:
+        return None
+
+    param_name = details[start:end].strip()
+    return param_name or None
 
 
 OUTBOUND_DEDUP_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 dias
@@ -156,7 +273,13 @@ async def send_text(to: str, text: str, dedup_key: str | None = None) -> dict:
                 await _mark_outbound_sent(dedup_key, body)
             logger.info("📤 Texto enviado.", to=to, preview=text[:60])
             await _append_assistant_history(to, text)
+            await mirror_outbound_message(to, text)
+            await increment_metric("messages_responded_total", tags={"channel": "whatsapp", "type": "text"})
             return body
+    except Exception:
+        await increment_metric("messages_response_failed_total", tags={"channel": "whatsapp", "type": "text"})
+        await increment_metric("conversation_error_total", tags={"category": "send_error", "channel": "whatsapp", "type": "text"})
+        raise
     finally:
         if dedup_key and lock_token:
             await _release_outbound_lock(dedup_key, lock_token)
@@ -212,6 +335,45 @@ async def send_template(
 
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+
+            # Compatibilidade: templates com placeholders nomeados exigem
+            # parameter_name em cada parâmetro.
+            if body_params and _is_missing_parameter_name_error(resp):
+                missing_name = _extract_missing_template_param_name(resp)
+                logger.warning(
+                    "⚠️ Template exige parâmetros nomeados; tentando reenvio com parameter_name.",
+                    template=template_name,
+                    to=to,
+                    missing_param_name=missing_name,
+                    status=resp.status_code,
+                    body=resp.text[:220],
+                )
+                if len(body_params) != 1:
+                    resp.raise_for_status()
+                if not missing_name:
+                    missing_name = "customer_name"
+                fallback_payload = {
+                    **_base_payload(to),
+                    "type": "template",
+                    "template": {
+                        "name": template_name,
+                        "language": {"code": language_code},
+                        "components": [
+                            {
+                                "type": "body",
+                                "parameters": [
+                                    {
+                                        "type": "text",
+                                        "parameter_name": missing_name,
+                                        "text": body_params[0],
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                }
+                resp = await client.post(BASE_URL, json=fallback_payload, headers=HEADERS)
+
             resp.raise_for_status()
             body = resp.json()
             if dedup_key:
@@ -227,14 +389,25 @@ async def send_template(
             if body_params:
                 template_preview += f" | params: {' | '.join(body_params)}"
             await _append_assistant_history(to, template_preview)
+            await mirror_outbound_message(to, template_preview)
+            await increment_metric("messages_responded_total", tags={"channel": "whatsapp", "type": "template"})
             return body
+    except Exception:
+        await increment_metric("messages_response_failed_total", tags={"channel": "whatsapp", "type": "template"})
+        await increment_metric("conversation_error_total", tags={"category": "send_error", "channel": "whatsapp", "type": "template"})
+        raise
     finally:
         if dedup_key and lock_token:
             await _release_outbound_lock(dedup_key, lock_token)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def send_audio_by_url(to: str, audio_url: str, history_label: str | None = "[áudio enviado]") -> dict:
+async def send_audio_by_url(
+    to: str,
+    audio_url: str,
+    history_label: str | None = "[áudio enviado]",
+    dedup_key: str | None = None,
+) -> dict:
     """
     Envia um áudio a partir de uma URL pública como mensagem de voz (PTT).
     Aparece com ondas de voz no WhatsApp, igual a um áudio gravado pelo celular.
@@ -245,17 +418,41 @@ async def send_audio_by_url(to: str, audio_url: str, history_label: str | None =
         "type": "audio",
         "audio": {"link": audio_url, "voice": True},
     }
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
-        resp.raise_for_status()
-        logger.info("🎤 Áudio PTT enviado por URL.", to=to, url=audio_url)
-        if history_label:
-            await _append_assistant_history(to, history_label)
-        return resp.json()
+    lock_token: str | None = None
+    try:
+        lock_token, skipped = await _begin_outbound_send(dedup_key)
+        if skipped:
+            logger.info("⏭️ Áudio outbound deduplicado (url).", to=to, dedup_key=dedup_key)
+            return skipped
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+            resp.raise_for_status()
+            body = resp.json()
+            if dedup_key:
+                await _mark_outbound_sent(dedup_key, body)
+            logger.info("🎤 Áudio PTT enviado por URL.", to=to, url=audio_url)
+            if history_label:
+                await _append_assistant_history(to, history_label)
+                await mirror_outbound_message(to, history_label)
+            await increment_metric("messages_responded_total", tags={"channel": "whatsapp", "type": "audio"})
+            return body
+    except Exception:
+        await increment_metric("messages_response_failed_total", tags={"channel": "whatsapp", "type": "audio"})
+        await increment_metric("conversation_error_total", tags={"category": "send_error", "channel": "whatsapp", "type": "audio"})
+        raise
+    finally:
+        if dedup_key and lock_token:
+            await _release_outbound_lock(dedup_key, lock_token)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def send_audio_by_media_id(to: str, media_id: str, history_label: str | None = "[áudio enviado]") -> dict:
+async def send_audio_by_media_id(
+    to: str,
+    media_id: str,
+    history_label: str | None = "[áudio enviado]",
+    dedup_key: str | None = None,
+) -> dict:
     """
     Envia um áudio usando um media_id já hospedado na Meta como mensagem de voz (PTT).
     Aparece com ondas de voz no WhatsApp, igual a um áudio gravado pelo celular.
@@ -266,13 +463,32 @@ async def send_audio_by_media_id(to: str, media_id: str, history_label: str | No
         "type": "audio",
         "audio": {"id": media_id, "voice": True},
     }
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
-        resp.raise_for_status()
-        logger.info("🎤 Áudio PTT enviado por media_id.", to=to, media_id=media_id)
-        if history_label:
-            await _append_assistant_history(to, history_label)
-        return resp.json()
+    lock_token: str | None = None
+    try:
+        lock_token, skipped = await _begin_outbound_send(dedup_key)
+        if skipped:
+            logger.info("⏭️ Áudio outbound deduplicado (media_id).", to=to, dedup_key=dedup_key)
+            return skipped
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+            resp.raise_for_status()
+            body = resp.json()
+            if dedup_key:
+                await _mark_outbound_sent(dedup_key, body)
+            logger.info("🎤 Áudio PTT enviado por media_id.", to=to, media_id=media_id)
+            if history_label:
+                await _append_assistant_history(to, history_label)
+                await mirror_outbound_message(to, history_label)
+            await increment_metric("messages_responded_total", tags={"channel": "whatsapp", "type": "audio"})
+            return body
+    except Exception:
+        await increment_metric("messages_response_failed_total", tags={"channel": "whatsapp", "type": "audio"})
+        await increment_metric("conversation_error_total", tags={"category": "send_error", "channel": "whatsapp", "type": "audio"})
+        raise
+    finally:
+        if dedup_key and lock_token:
+            await _release_outbound_lock(dedup_key, lock_token)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -349,7 +565,12 @@ async def upload_image(file_path: str) -> str:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def send_image_by_media_id(to: str, media_id: str, caption: str = "") -> dict:
+async def send_image_by_media_id(
+    to: str,
+    media_id: str,
+    caption: str = "",
+    dedup_key: str | None = None,
+) -> dict:
     """Envia uma imagem usando um media_id já hospedado na Meta."""
     image_payload: dict = {"id": media_id}
     if caption:
@@ -359,17 +580,41 @@ async def send_image_by_media_id(to: str, media_id: str, caption: str = "") -> d
         "type": "image",
         "image": image_payload,
     }
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
-        resp.raise_for_status()
-        logger.info("🖼 Imagem enviada por media_id.", to=to, media_id=media_id)
-        caption_preview = f"[imagem enviada] {caption}".strip()
-        await _append_assistant_history(to, caption_preview)
-        return resp.json()
+    lock_token: str | None = None
+    try:
+        lock_token, skipped = await _begin_outbound_send(dedup_key)
+        if skipped:
+            logger.info("⏭️ Imagem outbound deduplicada (media_id).", to=to, dedup_key=dedup_key)
+            return skipped
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+            resp.raise_for_status()
+            body = resp.json()
+            if dedup_key:
+                await _mark_outbound_sent(dedup_key, body)
+            logger.info("🖼 Imagem enviada por media_id.", to=to, media_id=media_id)
+            caption_preview = f"[imagem enviada] {caption}".strip()
+            await _append_assistant_history(to, caption_preview)
+            await mirror_outbound_message(to, caption_preview)
+            await increment_metric("messages_responded_total", tags={"channel": "whatsapp", "type": "image"})
+            return body
+    except Exception:
+        await increment_metric("messages_response_failed_total", tags={"channel": "whatsapp", "type": "image"})
+        await increment_metric("conversation_error_total", tags={"category": "send_error", "channel": "whatsapp", "type": "image"})
+        raise
+    finally:
+        if dedup_key and lock_token:
+            await _release_outbound_lock(dedup_key, lock_token)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-async def send_image_by_url(to: str, image_url: str, caption: str = "") -> dict:
+async def send_image_by_url(
+    to: str,
+    image_url: str,
+    caption: str = "",
+    dedup_key: str | None = None,
+) -> dict:
     """Envia uma imagem a partir de uma URL pública."""
     image_payload: dict = {"link": image_url}
     if caption:
@@ -379,13 +624,32 @@ async def send_image_by_url(to: str, image_url: str, caption: str = "") -> dict:
         "type": "image",
         "image": image_payload,
     }
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
-        resp.raise_for_status()
-        logger.info("🖼 Imagem enviada por URL.", to=to, url=image_url)
-        caption_preview = f"[imagem enviada] {caption}".strip()
-        await _append_assistant_history(to, caption_preview)
-        return resp.json()
+    lock_token: str | None = None
+    try:
+        lock_token, skipped = await _begin_outbound_send(dedup_key)
+        if skipped:
+            logger.info("⏭️ Imagem outbound deduplicada (url).", to=to, dedup_key=dedup_key)
+            return skipped
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(BASE_URL, json=payload, headers=HEADERS)
+            resp.raise_for_status()
+            body = resp.json()
+            if dedup_key:
+                await _mark_outbound_sent(dedup_key, body)
+            logger.info("🖼 Imagem enviada por URL.", to=to, url=image_url)
+            caption_preview = f"[imagem enviada] {caption}".strip()
+            await _append_assistant_history(to, caption_preview)
+            await mirror_outbound_message(to, caption_preview)
+            await increment_metric("messages_responded_total", tags={"channel": "whatsapp", "type": "image"})
+            return body
+    except Exception:
+        await increment_metric("messages_response_failed_total", tags={"channel": "whatsapp", "type": "image"})
+        await increment_metric("conversation_error_total", tags={"category": "send_error", "channel": "whatsapp", "type": "image"})
+        raise
+    finally:
+        if dedup_key and lock_token:
+            await _release_outbound_lock(dedup_key, lock_token)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -529,7 +793,7 @@ async def send_reaction(to: str, message_id: str, emoji: str = "❤️") -> None
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
-                f"https://graph.facebook.com/v22.0/{settings.whatsapp_phone_number_id}/messages",
+                BASE_URL,
                 json=payload,
                 headers=HEADERS,
             )

@@ -1,15 +1,10 @@
 import structlog
-from app.config import settings
 from app.models.lead import Lead, LeadStage
-from app.memory.session import update_lead_field, save_lead
+from app.memory.session import save_lead, acquire_ops_alert_cooldown
 from app.services import whatsapp, crm, ops_alert
+from app.services.telemetry import increment_metric
 
 logger = structlog.get_logger()
-
-
-def _normalize_phone(phone: str) -> str:
-    """Mantém somente dígitos para envio na API da Meta."""
-    return "".join(ch for ch in phone if ch.isdigit())
 
 # Frases que indicam que o lead quer falar com humano
 HUMAN_TRIGGERS = [
@@ -34,11 +29,34 @@ def should_escalate_by_message(text: str) -> bool:
     return any(trigger in lower for trigger in HUMAN_TRIGGERS)
 
 
-async def notify_human_only(lead: Lead, reason: str, user_message: str = "") -> None:
+async def notify_human_only(
+    lead: Lead,
+    reason: str,
+    user_message: str = "",
+    *,
+    dedup_key: str | None = None,
+    dedup_ttl_seconds: int = 30 * 60,
+) -> bool:
     """
     Apenas notifica o canal interno de operações (Telegram), sem alterar estágio do lead.
     Útil para perguntas não mapeadas durante script ativo.
     """
+    if dedup_key:
+        can_notify = await acquire_ops_alert_cooldown(
+            lead.phone_number,
+            dedup_key,
+            ttl_seconds=dedup_ttl_seconds,
+        )
+        if not can_notify:
+            logger.info(
+                "🔕 Alerta interno deduplicado por cooldown.",
+                phone=lead.phone_number,
+                dedup_key=dedup_key,
+                reason=reason,
+            )
+            await increment_metric("conversation_event_total", tags={"category": "outside_faq_alert_deduped"})
+            return False
+
     alert_message = (
         f"🟡 *Lead com pergunta para atendimento humano*\n\n"
         f"📱 *Número:* +{lead.phone_number}\n"
@@ -56,15 +74,19 @@ async def notify_human_only(lead: Lead, reason: str, user_message: str = "") -> 
             phone=lead.phone_number,
             reason=reason,
         )
+        await increment_metric("conversation_error_total", tags={"category": "send_error", "channel": "telegram"})
+        return False
+    await increment_metric("conversation_event_total", tags={"category": "outside_faq_alert_sent"})
+    return True
 
 
 async def escalate(lead: Lead, reason: str = "Solicitado pelo lead") -> Lead:
     """
     Executa o fluxo de escalação:
     1. Atualiza o estágio do lead
-    2. Notifica o número humano via WhatsApp
+    2. Notifica o lead via WhatsApp
     3. Sincroniza com o SprintHub
-    4. Avisa o lead que um consultor vai entrar em contato
+    4. Notifica operações no Telegram
     """
     if lead.is_escalated:
         logger.info("Lead já foi escalado anteriormente.", phone=lead.phone_number)
@@ -89,34 +111,23 @@ async def escalate(lead: Lead, reason: str = "Solicitado pelo lead") -> Lead:
         ),
     )
 
-    # 3. Notifica o número de suporte humano
-    if not settings.escalation_whatsapp_number:
-        logger.warning("ESCALATION_WHATSAPP_NUMBER não configurado, aviso não foi enviado.")
-    else:
-        escalation_to = _normalize_phone(settings.escalation_whatsapp_number)
-        if not escalation_to:
-            logger.warning("ESCALATION_WHATSAPP_NUMBER inválido após normalização.")
-        else:
-            alert_message = (
-                f"🚨 *Novo lead aguardando atendimento humano!*\n\n"
-                f"📱 *Número:* +{lead.phone_number}\n"
-                f"👤 *Nome:* {lead.name or 'Não identificado'}\n"
-                f"📚 *Curso de interesse:* {lead.course_slug.value}\n"
-                f"📍 *Estágio:* {lead.stage.value}\n"
-                f"📝 *Motivo:* {reason}\n\n"
-                f"Por favor, entre em contato com o lead o quanto antes!"
-            )
-            try:
-                await whatsapp.send_text(
-                    to=escalation_to,
-                    text=alert_message,
-                )
-            except Exception as e:
-                logger.error(
-                    "Falha ao enviar notificação humana (escalate).",
-                    to=escalation_to,
-                    error=str(e),
-                )
+    # 3. Notifica operações no Telegram (canal interno).
+    alert_message = (
+        "🚨 Novo lead aguardando atendimento humano!\n\n"
+        f"Número: +{lead.phone_number}\n"
+        f"Nome: {lead.name or 'Não identificado'}\n"
+        f"Curso de interesse: {lead.course_slug.value}\n"
+        f"Estágio: {lead.stage.value}\n"
+        f"Motivo: {reason}\n\n"
+        "Por favor, entre em contato com o lead o quanto antes."
+    )
+    delivered = await ops_alert.send_internal_alert(alert_message)
+    if not delivered:
+        logger.warning(
+            "Notificação interna não enviada durante escalate (Telegram indisponível).",
+            phone=lead.phone_number,
+            reason=reason,
+        )
 
     # 4. Sincroniza com CRM
     await crm.sync_lead(lead)

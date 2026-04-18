@@ -102,6 +102,7 @@ _ACOLHIMENTO_SYSTEM = (
     "- APENAS mostre que você leu e está presente\n"
     "- Linguagem calorosa e natural, português brasileiro\n"
     "- Não use travessão (—)\n\n"
+    "- Não use dois pontos (:)\n\n"
     "EXEMPLOS CORRETOS:\n"
     "Faz todo sentido!\n"
     "Que bom que você trouxe isso 😊\n"
@@ -126,6 +127,14 @@ class BaseAgent:
 
     course_slug: str = "unknown"
     system_prompt: str = ""
+
+    @staticmethod
+    def _sanitize_style_forbidden_chars(text: str) -> str:
+        """
+        Remove caracteres proibidos pelo negócio nas mensagens do agente.
+        """
+        sanitized = (text or "").replace("—", ",").replace("–", ",")
+        return sanitized.replace(":", ",")
 
     @staticmethod
     def _compact_messages(history: list[dict], fallback_user_message: str, max_n: int) -> list[dict]:
@@ -172,6 +181,7 @@ class BaseAgent:
                 "4. Se o lead fizer pergunta tecnica: responda em 1 linha objetiva e pare.\n"
                 "5. NUNCA revele o preco — o script ainda nao chegou no bloco de oferta.\n"
                 "6. NUNCA repita o conteudo dos audios ja enviados.\n\n"
+                "7. NUNCA use dois pontos (:).\n\n"
                 "Exemplos do tom correto:\n"
                 "- \"Que bom que voce percebe isso! 😊\"\n"
                 "- \"Faz todo sentido!\"\n"
@@ -189,7 +199,8 @@ class BaseAgent:
                 "3. Se o lead nao respondeu: use um dos roteiros de follow-up do seu script de personalidade.\n"
                 "4. Se o lead disse sim: encaminhe diretamente para o link de matricula da knowledge base.\n"
                 "5. Se o preco ainda nao foi revelado: nao revele — sinalize que vai verificar.\n"
-                "6. Seja direta no fechamento — seguranca transmite confianca, nao pressao."
+                "6. Seja direta no fechamento — seguranca transmite confianca, nao pressao.\n"
+                "7. NUNCA use dois pontos (:)."
             )
 
         return (
@@ -220,7 +231,8 @@ class BaseAgent:
             f"   complemente-os com respostas naturais, nunca repita o que foi dito nos áudios.\n"
             f"10. NUNCA use travessão (—) em nenhuma mensagem. Use vírgula, ponto final ou\n"
             f"    quebra de linha no lugar. Pessoas não usam travessão em conversas de WhatsApp.\n"
-            f"11. NUNCA invente ou assuma informações que não estão explicitamente na base de\n"
+            f"11. NUNCA use dois pontos (:) em nenhuma mensagem.\n"
+            f"12. NUNCA invente ou assuma informações que não estão explicitamente na base de\n"
             f"    conhecimento acima. Se o lead perguntar algo que não está lá, diga que vai\n"
             f"    verificar e acione escalação para não prometer algo errado.\n\n"
             f"══════════════════════════════════════════\n"
@@ -350,7 +362,11 @@ class BaseAgent:
             )
             for block in response.content:
                 if block.type == "tool_use" and block.name == "script_context":
-                    return block.input
+                    decision = block.input
+                    reply = str(decision.get("reply") or "").strip()
+                    if reply:
+                        decision["reply"] = self._sanitize_style_forbidden_chars(reply)
+                    return decision
         except Exception as e:
             logger.warning(
                 "Falha na decisão contextual do script — escalando por segurança.",
@@ -388,7 +404,7 @@ class BaseAgent:
             )
             if not response.content or not hasattr(response.content[0], "text"):
                 return None
-            return response.content[0].text.strip()
+            return self._sanitize_style_forbidden_chars(response.content[0].text.strip())
         except Exception as e:
             logger.warning("Falha ao gerar acolhimento — script continua.", error=str(e), phone=lead.phone_number)
             return None
@@ -432,7 +448,7 @@ class BaseAgent:
             )
             if not response.content or not hasattr(response.content[0], 'text'):
                 raise ValueError("Claude retornou formato inesperado")
-            reply_text = response.content[0].text.strip()
+            reply_text = self._sanitize_style_forbidden_chars(response.content[0].text.strip())
         except Exception as e:
             logger.error("❌ Erro ao chamar Claude.", error=str(e))
             await increment_metric("conversation_error_total", tags={"category": "llm_error", "provider": "anthropic"})
@@ -449,6 +465,7 @@ class BaseAgent:
                 "Oi! Tive um probleminha aqui, mas já estou resolvendo. "
                 "Pode me mandar sua dúvida de novo? 😊"
             )
+            reply_text = self._sanitize_style_forbidden_chars(reply_text)
 
         # 5. Simula digitação e envia — divide em bolhas separadas por linha
         try:

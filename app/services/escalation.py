@@ -41,6 +41,21 @@ async def notify_human_only(
     Apenas notifica o canal interno de operações (Telegram), sem alterar estágio do lead.
     Útil para perguntas não mapeadas durante script ativo.
     """
+    normalized_reason = (reason or "").strip().lower()
+    normalized_user_message = (user_message or "").strip().lower()
+    if (
+        "outbound_streak_guard" in normalized_reason
+        or "excesso de mensagens sem resposta" in normalized_reason
+        or "streak_assistant=" in normalized_user_message
+    ):
+        logger.info(
+            "🔕 Alerta de outbound streak bloqueado por regra explícita.",
+            phone=lead.phone_number,
+            reason=reason,
+            user_message=user_message,
+        )
+        return False
+
     if dedup_key:
         can_notify = await acquire_ops_alert_cooldown(
             lead.phone_number,
